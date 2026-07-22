@@ -1,0 +1,306 @@
+# CLAUDE.md
+
+문서 기반 개발 파이프라인. 사람이 쓴 기획문서(.md)를 입력으로,
+개발 문서를 생성하고 그에 맞춰 코드까지 생성·검증하는 멀티에이전트 파이프라인.
+
+## 전체 흐름 (목표)
+
+```
+[사람] 기획문서.md (ground truth)
+        │
+   문서화 (요구사항 → {화면설계, ERD} → API 명세)
+        │  ← API 명세 = 백엔드/프론트가 공유하는 계약(JSON)
+   [검토 게이트: 사람 승인 / HITL]
+        │
+   백엔드 에이전트 ∥ 프론트엔드 에이전트  (같은 API 명세 소비)
+        │
+   통합·검증 (계약 일치 → 빌드 → 테스트 생성·실행)
+        │  ← 실패 시 원인 분류해서 해당 노드로 조건부 루프백
+   완료
+```
+
+## 현재 상태 (v10)
+
+**목표 흐름이 한 바퀴 다 돈다** (2026-07-22 실측): 기획문서 → 문서 4종 → 사람 승인
+→ 백엔드(sqlite) ∥ 프론트(react + 디자인 토큰) → 검증 3종(실행·계약·토큰) 전부 통과.
+브라우저에서 CRUD와 디자인 적용까지 눈으로 확인했다. 남은 항목은 전부 "필요가
+증명되면" 대기 상태다.
+
+
+- 구현됨: `requirements` → `{screen_design, data_model}` (fan-out) → `api_spec` (fan-in)
+  → `openapi_spec` → `consistency_check` → `review_gate` → (조건부) fan-out:
+  - `backend` → `write_backend` → `verify_backend` → (실패 시 루프백) `backend` | END
+  - `frontend` → `write_frontend` → `verify_frontend` → END
+- **백엔드와 프론트엔드가 나란히(fan-out) 돈다.** 둘은 서로의 산출물을 안 보고
+  `api_spec`만 공유한다 - 그래서 순서를 정할 이유가 없고, 한쪽만 재생성해도
+  다른 쪽이 안 깨진다. 협상하는 멀티에이전트가 아니라 **계약 공유형**이다.
+- 2026-07-22 기준 실측: `fastapi` + `react` 조합으로 전 구간 통과했다 (백엔드
+  재시도 0회, 스모크 + 영속성 통과, 프론트 경로 3개 일치, 디자인 토큰 8색 전부 반영,
+  `npm run build` 성공, 브라우저에서 CRUD·CORS·한글 입력·디자인 확인 완료).
+- **프론트 구현체도 레지스트리로 고른다** (`.env`의 `FRONTEND_TARGET`):
+  `vanilla`(빌드 없는 단일 index.html) / `react`(React + Vite). 백엔드와 똑같은
+  패턴이라 스택을 추가해도 `graph.py` 배선은 안 바뀐다.
+- **어떤 프론트 스택이든 `npm install`/빌드는 파이프라인이 안 돌린다.** 사람이
+  `cd generated/frontend && npm install && npm run dev`로 띄운다 - "여러 스택 자동
+  기동은 깨지기 쉽다"는 교훈 그대로다. 검사(정적 대조)만 자동화한다.
+- **`verify_frontend`는 LLM을 안 쓰는 두 번째 노드다.** 생성된 html/js에서 `fetch()`
+  호출 경로를 정규식으로 뽑아 `api_spec`의 경로와 대조한다 (`${BASE}/todos/${id}`와
+  `/todos/{id}`를 같은 형태로 정규화해서 비교). 서버를 안 띄우므로 빠르고 결정적이다.
+  **지금은 진단만 하고 루프백은 안 붙였다** - "진단과 수정은 분리해서 단계적으로"
+  규칙에 따라 리포트가 쓸만한지 먼저 본다. 파일 하단에 `__main__` self-check가 있다.
+- **자기 수정 루프가 붙었다.** `backend`(생성) → `write_backend`(디스크 쓰기) →
+  `verify_backend`(실제 기동 + CRUD 스모크) 순으로 돌고, 검증 실패면 실패 로그를
+  프롬프트에 실어 `backend`로 되돌아가 재생성한다. 상한은 `graph.py`의
+  `MAX_BACKEND_RETRIES = 3` (`retry_count`는 루프백 경로에만 있는 `bump_retry`
+  노드가 올리므로 첫 생성은 0회).
+- 파일 쓰기가 main.py에서 `write_backend` 노드로 옮겨졌다. 재생성마다 디스크에
+  다시 써야 `verify_backend`가 최신 코드를 검증하므로 루프 안에 있어야 한다.
+  main.py는 이제 결과 출력과 사람 승인만 맡는다.
+- **생성되는 백엔드는 sqlite3 파일 DB(`todos.db`)를 쓴다** (fastapi 한정). 표준
+  라이브러리라 `requirements.txt`는 여전히 `fastapi`/`uvicorn` 둘뿐이다.
+- **자동 실행 검증은 fastapi 전용이다** (`verify_backend.py`). 전용 포트 8010에서
+  uvicorn을 띄우고 POST/GET/PUT/DELETE 기본 흐름을 requests로 호출한 뒤, 서버를
+  껐다 켜서 데이터가 남아있는지까지 본다 (영속성 검사). 다른 스택은
+  기동 방식·빌드 시간·실패 모드가 제각각이라 자동 검증을 건너뛰고 통과 처리한다
+  (수동 검증은 여전히 유효).
+- **`openapi_spec`은 이 파이프라인에서 처음으로 LLM을 안 쓰는 노드다.** `api_spec`(내부
+  단순 포맷)을 정식 OpenAPI 3.0 문서로 규칙 기반 변환한다 (`src/nodes/openapi_spec.py`).
+  같은 입력 → 항상 같은 출력이 보장되어야 하므로 결정적으로 짰다.
+  `write_backend` 노드가 백엔드 코드와 함께 `generated/backend/openapi.json`으로 저장한다.
+- **자동 계약 검사(schemathesis)는 파이프라인 밖에서, 사람이 수동으로 돌린다.**
+  4개 스택(Python/Java/Node/TS)을 파이썬으로 자동 기동시키는 건 오늘 겪은 이슈들
+  (Gradle 버전, 포트 충돌, 인코딩)로 봤을 때 너무 깨지기 쉬워서, 지금까지처럼
+  사람이 서버를 띄운 뒤 별도 명령으로 `schemathesis run openapi.json --url ...`을
+  돌리는 방식을 택했다. `schemathesis`는 `requirements.txt`에 필수 의존성이 아니라
+  주석으로 안내만 되어 있다 (별도 설치).
+- `review_gate`가 조건부 라우팅 지점: `consistency_report.passed == false`면
+  `interrupt()`로 멈추고 사람이 y/n으로 승인/거부 (`main.py`가 `Command(resume=...)`로 재개).
+- 백엔드 구현체는 여전히 `.env`의 `BACKEND_TARGET`으로 레지스트리에서 선택
+  (fastapi/spring/express/typescript, 4개 모두 CRUD 실사용 검증 완료).
+- 아직 없음: fastapi 외 스택의 자동 실행 검증, 프론트엔드 노드, 테스트 생성·실행,
+  schemathesis 결과를 파이프라인에 자동으로 피드백하는 루프(지금은 순수 진단 도구로만 씀),
+  재시도 상한 도달 시 사람 에스컬레이션(지금은 로그 출력 + 수동 확인 안내로 끝)
+
+## 아키텍처 규칙
+
+- 각 노드는 필요한 state만 읽고, **자기 산출물 필드만** dict로 반환한다.
+- API 명세는 markdown이 아니라 **dict(JSON)** 으로 뽑는다 → 기계가 검사 가능한 계약.
+- 화면설계서는 markdown(사람이 읽는 문서), ERD는 dict(JSON, 기계가 검사)로 성격을 나눈다.
+- **결정적으로 할 수 있는 변환(예: 내부 스펙 → 정식 OpenAPI)은 LLM을 쓰지 않는다.**
+  순수 코드로 짜서 같은 입력에 항상 같은 출력을 보장한다.
+- 코드 생성 노드(backend 등)는 **`{"files": [{"path", "content"}]}`** 형태로 뽑는다
+  → 파일 개수·언어가 달라도 스키마가 안 바뀐다.
+- **같은 역할(예: backend)에 구현체가 여럿이면 레지스트리 딕셔너리로 묶는다.**
+  graph.py에 if/elif를 스택 개수만큼 쌓지 않는다.
+- 코드 생성 노드는 **명세(API 명세·ERD)만 근거**로 삼는다. 화면설계서나 기획문서를
+  직접 보지 않는다 - 계약을 우회해서 구현하는 걸 막기 위함.
+  **예외: `frontend` 노드는 화면설계서도 받는다.** 이 규칙의 취지는 계약(api_spec)을
+  우회한 구현을 막는 것인데, 프론트에서 화면설계서는 계약이 아니라 레이아웃 정보다.
+  계약 준수는 `verify_frontend`가 결정적으로 검사하므로 우회할 수단이 없다. 안 주면
+  UI 구조를 LLM이 지어내게 되고 `screen_design` 산출물이 아무데도 안 쓰이는 죽은
+  문서가 된다. 프롬프트에는 "화면설계서에 있어도 대응 엔드포인트가 없으면 구현하지
+  않는다"를 명시해서 계약이 상위임을 못박는다.
+- **사람 개입이 필요한 지점(HITL)은 `interrupt()` + checkpointer + 조건부 엣지**로
+  만든다. 노드 함수 안에서 `input()` 등으로 직접 막지 않는다 - 그래프 상태로
+  남아야 재개·재시도·다른 클라이언트(웹 등)에서의 승인이 가능해진다.
+- **여러 언어/스택에 걸쳐 서버를 자동 기동시키는 자동화는 신중히 판단한다.** 오늘
+  겪은 것처럼 환경별 변수(빌드 도구 버전, 포트 예약, 인코딩)가 많아 깨지기 쉬우면,
+  사람이 수동으로 실행하는 단계로 남겨두고 검사만 자동화하는 게 더 견고할 수 있다.
+- 테스트는 코드가 아니라 **요구사항·API 명세**에서 생성한다 (코드 버그를 정답으로 박제하지 않기 위해).
+- 검증 루프에는 **재시도 상한 + 사람 에스컬레이션**을 반드시 둔다.
+- 새 스테이지는 전부 `src/nodes/` 밑에 노드로 추가한다. **단 그래프 조립은
+  `src/graph.py` 하나뿐이다** - `src/nodes/graph.py` 같은 자리에 두 번째 배선
+  파일이 생기면 import도 안 되고 에러도 안 나서 조용히 무시된다. 실제로 write/
+  verify 노드 배선이 `src/nodes/graph.py`에 들어가 있어서 검증이 0회로 돌던 적이
+  있다. 노드 추가 후엔 `build_pipeline()`으로 컴파일해 엣지를 찍어보고 확인한다.
+- **루프 카운터(retry_count 등)는 루프백 경로 위의 전용 노드가 올린다**
+  (`bump_retry`). 조건부 엣지 함수는 state를 읽기만 할 뿐 못 바꾼다. 생성 노드
+  안에서 올리면 스택별 구현체마다 같은 코드를 넣어야 해서 하나만 빠뜨려도
+  무한 루프가 된다.
+- **루프를 한 바퀴 돌 때, 이전 회차의 판정 결과는 다음 판정 전에 지운다.**
+  안 지우면 낡은 리포트를 보고 검사를 건너뛰는 침묵 실패가 생긴다
+  (`write_backend`가 성공 시 `verify_report`를 None으로 되돌리는 이유).
+- 진단(체크)과 수정(루프백)은 분리해서 단계적으로 붙인다 - 한 번에 합치면 디버깅이 어려워진다.
+- 반복적으로 나타나는 일관성 이슈(예: path parameter 중복, Gradle 버전, Jackson 직렬화,
+  필드 캡슐화)는 해당 생성 노드의 프롬프트 규칙으로 승격시켜 재발을 막는다.
+- **계약(api_spec)에 안 적히지만 없으면 연동이 안 되는 것들은 프롬프트 규칙으로
+  못박는다.** 대표가 CORS다 - 프론트가 브라우저에서 부르는 이상 백엔드가 CORS를
+  안 열면 경로가 아무리 맞아도 데이터가 안 온다. 백엔드 4종 프롬프트에 전부
+  넣었다. `verify_frontend`는 경로만 보므로 이런 건 잡아주지 못한다.
+- LLM 기반 검토(consistency_check)는 매번 같은 기준으로 걸러내지 못할 수 있다 - 최종
+  신뢰는 schemathesis 같은 결정적 도구가 맡는다. 실제로 스택별 DELETE 응답 형태가
+  제각각(success/id/result)이었는데 리포트가 못 잡은 전례가 있다.
+- **결과 출력에 이모지를 쓰려면 stdout을 utf-8로 고정한다** (`main.py` 상단의
+  `sys.stdout.reconfigure`). 윈도우 콘솔 기본 인코딩은 cp949라 `✅` 하나에
+  `UnicodeEncodeError`가 나고, 그래프가 다 돌고 난 뒤 출력 단계에서 죽어서
+  원인을 찾기 어렵다. 파이프(`python main.py | tail`)로 연결해도 같은 문제가 난다.
+- 백엔드 코드 생성 후 디스크에 쓰기 전, 이전 실행의 잔여 파일(특히 스택을 바꿔가며
+  재실행할 때)이 안 섞이도록 출력 폴더를 비운다. 파일이 다른 프로세스(실행 중인 서버
+  등)에 잠겨 삭제가 실패해도 파이프라인이 죽지 않고 경고 후 계속 진행한다.
+
+## 구조
+
+```
+main.py               진입점 (python main.py)
+                        - MemorySaver checkpointer로 그래프 컴파일
+                        - interrupt 발생 시 사람에게 y/n 입력받아 Command(resume=...)로 재개
+                        - 결과 출력만 (파일 쓰기는 write_backend 노드로 이동됨)
+src/state.py           공유 상태(PipelineState) - approved, openapi_spec,
+                        verify_report, retry_count 필드 포함
+src/llm.py             LLM 호출 (OpenRouter 경유) + JSON 파싱 유틸
+src/design_system.py   디자인 토큰 로더 (노드 아님. 프론트 생성 노드들이 공유)
+                        design/design_system.md를 읽어 프롬프트 조각으로 만들고,
+                        검증용 색 hex 목록도 뽑아준다
+src/graph.py           노드 등록 + 엣지 배선 (BACKEND_TARGET → 레지스트리 조회,
+                        review_gate 뒤 조건부 엣지, verify_backend 뒤 재시도 루프백,
+                        MAX_RETRIES, checkpointer 파라미터)
+src/nodes/             모든 에이전트(노드)가 여기 산다
+  requirements.py       기획 → 요구사항정의서
+  screen_design.py      요구사항 → 화면설계서 (fan-out 브랜치 1)
+  data_model.py           요구사항 → ERD (fan-out 브랜치 2)
+  api_spec.py             화면설계+ERD+요구사항 → API 명세 (fan-in)
+  openapi_spec.py          API 명세 → 정식 OpenAPI 3.0 (LLM 미사용, 결정적)
+  consistency_check.py    네 문서 대조 → 진단 리포트
+  review_gate.py           HITL 게이트 - interrupt()로 사람 승인 대기
+  backend.py               FastAPI 구현체
+  backend_spring.py        Spring Boot 구현체
+  backend_express.py       Express(JS) 구현체
+  backend_express_ts.py    Express(TS) 구현체
+  backend_registry.py      위 구현체들을 BACKEND_TARGET 값에 매핑
+  write_backend.py         backend_code → generated/backend/에 파일 쓰기 (+openapi.json)
+                            write_files()는 write_frontend도 같이 씀
+  verify_backend.py        생성된 서버를 8010 포트에 띄우고 CRUD 스모크 + 재기동 후
+                            데이터 유지(영속성) 검사 (fastapi 전용)
+  frontend.py              vanilla 구현체 - 단일 index.html (빌드 도구 없음)
+  frontend_react.py        react 구현체 - React + Vite
+  frontend_registry.py     위 구현체들을 FRONTEND_TARGET 값에 매핑
+  write_frontend.py        frontend_code → generated/frontend/에 파일 쓰기
+  verify_frontend.py       소스의 fetch 경로 ↔ api_spec 대조 + 디자인 토큰 색 사용
+                            여부 (LLM 미사용, 진단만). node_modules/dist는 안 훑는다
+examples/             샘플 기획문서
+design/design_system.md  디자인 토큰. 이 파일만 프론트 프롬프트에 실린다
+design/reference/        Claude Design 등에서 내려받은 원본. 사람용, 프롬프트엔 안 실림
+generated/backend/    backend 노드가 생성한 실제 코드 + openapi.json (실행 가능)
+generated/frontend/   frontend 노드가 생성한 index.html (브라우저로 바로 열림)
+```
+
+## 다음에 할 것 (2026-07-22 확정 순서)
+
+**원칙: 아직 안 일어난 문제는 안 고친다.** 2026-07-21 실행에서 백엔드 재시도 0회,
+프론트 계약 위반 0건이었다 - 루프백·에이전트 승격은 필요성이 데이터로 아직 없다.
+문제가 실제로 나면 그때 붙인다.
+
+1. ~~브라우저에서 실제 연동 확인~~ **완료 (2026-07-22).** 백엔드 8000 + 프론트 5173을
+   띄워 목록/추가/완료/삭제 전부 통과, 한글 제목도 정상, 콘솔에 CORS 에러 없음.
+   프리플라이트(OPTIONS)와 `access-control-allow-origin`도 확인했다.
+   - 이번에 우연히 맞았지만 위험한 축이 하나 드러났다: 백엔드가 `{"todos":[...]}`
+     래퍼로 주고 프론트가 `data.todos`로 읽어서 맞았는데, **경로는 같고 응답 모양만
+     다른 불일치는 `verify_frontend`가 못 잡는다.** 계약 검사의 다음 확장 지점.
+2. ~~DB 연결 (`sqlite3`)~~ **완료 (2026-07-22).** `backend.py` 프롬프트에 sqlite3 규칙을
+   넣고, `verify_backend`에 영속성 검사를 붙였다. 첫 생성에 바로 통과 (재시도 0회).
+   - 생성물: `todos.db`, `INTEGER PRIMARY KEY AUTOINCREMENT`, `requirements.txt`는
+     여전히 `fastapi`/`uvicorn` 둘뿐 (ORM·외부 DB 안 끌어옴).
+   - **영속성 검사가 in-memory와 DB를 가르는 유일한 검사다.** 스모크 테스트는 서버가
+     떠 있는 동안만 보므로 메모리에만 담아둬도 전부 통과한다. 그래서 POST → 서버
+     종료 → 재기동 → 그 항목이 남아있나 순으로 실제로 껐다 켠다.
+   - 검사 전에 이전 실행의 `todos.db`를 지운다. 안 지우면 "재기동 후에도 항목이 있다"가
+     이번 코드의 성과인지 지난번 잔여물인지 구분이 안 된다.
+   - 프롬프트에 못박은 sqlite 함정 4개: 요청마다 커넥션(스레드 오류), id는 DB가 매김
+     (파이썬 카운터는 재기동 시 초기화되어 겹침), boolean은 0/1로 저장되니 `bool()`로
+     변환해 내보내기, ORM 금지.
+   - **fastapi에만 넣었다.** 다른 3개 스택은 DB 접근 방식이 제각각이라 그 스택을 실제로
+     쓸 때 같이 붙인다.
+3. **에이전트 승격 판단** (아래 "에이전트 승격" 절). 2번을 돌려보고 결정하기로 했는데,
+   **재시도가 0회였다** - 프롬프트에 함정을 미리 못박으니 sqlite 전환을 한 번에
+   맞췄다. 승격의 근거로 삼을 실패 로그가 아직 없다는 뜻이고, 이건 "좋은 프롬프트를
+   가진 워크플로우가 자율성보다 낫다"는 쪽 증거다. 재시도가 실제로 쌓이기 시작할 때
+   다시 본다.
+4. ~~디자인 축~~ **완료 (2026-07-22, 아래 "디자인 시스템 연결" 절).** 토큰 8색 전부
+   생성물에 반영됐고 `verify_frontend`가 그걸 결정적으로 확인한다. 폰트·최대 너비·
+   모서리 반경·버튼 높이까지 토큰대로 나왔다.
+
+대기 (필요가 증명되면 착수):
+- 프론트 계약 위반 시 `frontend` 노드로 루프백 (진단은 붙었고 3/3 통과 중)
+- 자동 실행 검증을 fastapi 외 스택으로 확장 (기동 명령·타임아웃을 레지스트리에
+  같이 넣는 방식이면 스택마다 if/elif를 안 쌓아도 된다)
+- schemathesis 실패 리포트를 파싱해 backend로 자동 루프백 (지금은 진단 도구로만 사용)
+- 재시도 상한 도달 시 사람 에스컬레이션 (상한은 붙었고, 지금은 로그 출력 후 종료)
+- (선택) Spring 쪽에 MyBatis/JPA 연동 노드 - 인턴 업무 스택과 맞추고 싶을 때
+- (선택) review_gate의 checkpointer를 MemorySaver 대신 영속 저장소(SQLite 등)로
+  바꿔서, 프로세스 재시작 후에도 승인 대기 상태를 유지
+
+## 에이전트 승격 (검토 결론, 2026-07-21)
+
+"이걸 멀티에이전트라 부를 수 있나"를 따져본 결과: **"멀티"는 맞고 "에이전트"가 약하다.**
+역할 6개가 분담되어 계약(api_spec)을 공유하며 병렬로 도는 건 멀티에이전트가 맞지만,
+각 노드는 프롬프트 1회 던지고 JSON 받는 게 전부다 - 도구도 없고, 다음에 뭘 할지도
+`graph.py`의 엣지와 라우터 함수가 정한다. 자율성이 없다.
+
+**승격 대상은 `backend`와 `frontend` 둘뿐이다.** 이 둘만 성공/실패 신호가 즉시
+있기 때문이다 (서버가 뜨나? CRUD가 도나?). 신호 없는 노드에 자율 루프를 주면
+비용과 불확실성만 는다. `requirements`/`screen_design`/`data_model`/`api_spec`/
+`openapi_spec`은 순서가 정해진 변환이라 워크플로우가 정답이고, 그대로 둔다.
+
+승격의 실질적 이득: 지금은 검증 실패 시 **전체 재생성**이라 이미 고쳐진 부분까지
+날아간다. 에이전트가 되면 스스로 파일을 쓰고 돌려보고 traceback을 읽어 **틀린
+부분만** 고친다.
+
+```
+지금:  graph → backend(생성만) → write_backend → verify_backend → 라우터 판단 → 루프백
+승격:  graph → backend_agent(도구: write_file, run_cmd, read_log)
+                 자기 안에서: 쓴다 → 돌린다 → 에러 읽는다 → 그 줄 고친다 → 반복
+                 "됐다" 판단도 자기가. 그래프는 호출과 상한만 담당.
+```
+
+주의: 승격해도 재시도 상한과 사람 에스컬레이션은 그래프 쪽에 남긴다 - 에이전트가
+자기 루프를 무한히 돌지 않게 하는 건 바깥에서 걸어야 한다.
+
+## 디자인 시스템 연결 (2026-07-22 구현)
+
+지금 파이프라인에는 **외형의 근거가 되는 축이 없다**:
+
+```
+기획문서.md      → 뭘 하는지 (동작)
+api_spec         → 뭘 부르는지 (계약)
+디자인 시스템     → 어떻게 생겼는지 (외형)   ← 없음
+```
+
+그래서 `screen_design`이 LLM이 지어낸 markdown이고, 색·간격·컴포넌트 생김새가
+실행할 때마다 달라진다.
+
+**제약: `DesignSync`는 Claude Code 안에서 도는 도구라 `python main.py`가 못 부른다.**
+사람의 claude.ai 로그인으로 claude.ai/design 프로젝트를 읽고 쓴다. 그래서 노드로는
+못 붙이고, **파일 경유**로 연결한다 - schemathesis를 파이프라인 밖에 둔 것과 같은
+판단이다. 파이프라인은 로컬 파일만 보므로 자기 완결적이고, 동기화는 사람이 가끔 돈다.
+
+```
+design/
+├── design_system.md    토큰만 (색·타이포·간격·라운드 등). 이것만 프롬프트에 실린다
+└── reference/          Claude Design에서 내려받은 원본. 사람이 볼 용도, 프롬프트엔 안 실림
+```
+
+**토큰만 싣고 원본은 안 싣는 이유:** 완성된 HTML/CSS를 주고 "참고만 해라"고 하면
+LLM이 그 레이아웃을 거의 확실히 베낀다. 기획문서를 쇼핑몰로 바꿔도 Todo 앱 레이아웃이
+나온다. 토큰만 주면 레이아웃은 화면설계서를 보고 매번 새로 짜면서 톤앤매너만 고정된다.
+원본을 폴더에 남기는 건 출처 추적과 토큰 재추출의 근거로 쓰기 위함이다.
+
+**로더는 `frontend.py`(vanilla)와 `frontend_react.py`(react)가 공유한다.** 한쪽만
+읽게 하면 `FRONTEND_TARGET`을 바꿀 때마다 디자인이 달라진다.
+
+**Claude Design 프로젝트를 기다리지 않았다.** `list_projects`가 빈 배열이었고
+(쓰기 가능한 디자인 시스템 프로젝트 0개), 그때 분명해진 것: **파이프라인이 필요한
+건 `design/design_system.md` 한 장이고 Claude Design은 그 파일을 채우는 여러 방법 중
+하나일 뿐이다.** 그래서 토큰을 직접 써서 축을 먼저 세웠다. 나중에 디자인 시스템이
+생기면 이 파일만 갱신하면 되고 파이프라인 코드는 안 바뀐다.
+
+구현:
+- `src/design_system.py` - 노드가 아니라 헬퍼다. 그래프의 단계가 아니라 프론트 생성
+  노드들이 공유하는 입력이기 때문. `load_design_system()`은 파일이 없으면 빈 문자열을
+  주고, 그러면 디자인 축 없이 예전처럼 돈다.
+- `frontend.py`와 `frontend_react.py`가 같은 `design_prompt_block()`을 쓴다.
+- `verify_frontend`가 토큰의 색 hex가 생성물에 실제로 등장하는지 검사한다.
+  **`passed`에는 반영하지 않는다** - 디자인은 계약이 아니고, 안 쓰인 색이 항상
+  틀린 것도 아니다 (danger 색은 삭제 버튼 없는 화면엔 안 나온다). 색을 검사 대상으로
+  고른 이유는 코드에 문자열 그대로 박히는 값이라 신호가 확실해서다. 간격(12px) 같은
+  값은 우연히도 등장해서 신호가 약하다. `.css`를 검사 대상 확장자에 넣은 것도 이 때문
+  (react는 색이 `src/index.css`에 있다).

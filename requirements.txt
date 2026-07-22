@@ -1,0 +1,8 @@
+langgraph
+openai
+python-dotenv
+requests
+
+# 아래는 파이프라인 자체에는 필요 없고, 생성된 백엔드에 대해
+# 자동 계약 검사(schemathesis)를 돌릴 때만 별도로 설치하면 됩니다:
+# pip install schemathesis

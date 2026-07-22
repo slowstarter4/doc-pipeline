@@ -1,0 +1,75 @@
+"""
+프론트엔드 구현체: React + Vite
+
+frontend.py(단일 index.html)와 같은 계약(api_spec)을 소비하는 다른 스택이다.
+FRONTEND_TARGET으로 골라 쓴다 (frontend_registry.py).
+
+vanilla와 다른 점은 '빌드 단계가 생긴다'는 것뿐이다. 생성물은 바로 못 열고
+npm install → npm run dev를 사람이 돌려야 한다. verify_frontend는 여전히 소스에서
+fetch 경로만 뽑아 대조한다 - npm install/build까지 파이프라인이 자동으로 돌리는 건
+CLAUDE.md의 "여러 스택 자동 기동은 깨지기 쉽다"에 그대로 걸리므로 하지 않는다.
+
+출력 형식: {"files": [{"path": "상대경로", "content": "파일 내용"}]}
+"""
+
+import json
+
+from ..design_system import design_prompt_block
+from ..llm import call_llm, strip_json
+from ..state import PipelineState
+
+_SCHEMA_HINT = (
+    "너는 API 명세와 화면설계서를 보고 동작하는 React 프론트엔드를 작성하는 "
+    "개발자다. 다음 규칙을 반드시 지킨다:\n"
+    "- Vite + React 최소 구성으로 만든다. 다음 파일들을 전부 포함한다: "
+    "package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/index.css\n"
+    "- 의존성은 react, react-dom(dependencies)과 vite, @vitejs/plugin-react"
+    "(devDependencies)만 쓴다. UI 라이브러리·상태관리 라이브러리·라우터·axios를 "
+    "추가하지 않는다. 데이터 요청은 브라우저 내장 fetch로 한다.\n"
+    "- package.json의 scripts에 dev/build/preview를 넣고, \"type\": \"module\"을 "
+    "명시한다 (안 넣으면 vite.config.js의 import 구문이 실행되지 않는다).\n"
+    "- 상태는 useState/useEffect만으로 관리한다.\n"
+    "- API 명세에 있는 엔드포인트만 호출한다. 명세에 없는 경로를 부르지 않는다.\n"
+    "- 백엔드 주소는 src/App.jsx 맨 위에 상수 하나로 둔다: "
+    'const BASE = "http://localhost:8000";  '
+    "모든 호출은 fetch(`${BASE}/경로`) 형태로 한다 (백틱 템플릿 리터럴). "
+    "경로에 path parameter가 있으면 fetch(`${BASE}/todos/${id}`)처럼 쓴다. "
+    "이 형태를 벗어나면(예: URL을 변수에 담아 fetch(url)) 계약 검사가 호출을 "
+    "인식하지 못한다.\n"
+    "- 요청 body와 응답 필드는 API 명세에 정의된 필드명을 그대로 쓴다. "
+    "명세에 없는 필드를 지어내지 않는다.\n"
+    "- 화면설계서는 레이아웃과 사용자 흐름의 근거로만 쓴다. 화면설계서에 언급된 "
+    "기능이라도 API 명세에 대응하는 엔드포인트가 없으면 구현하지 않는다.\n"
+    "- 모든 fetch 응답의 status를 확인한다. 실패(400/404/500) 시 응답 body의 "
+    "메시지를 화면에 사람이 읽을 수 있게 표시한다. 조용히 무시하지 않는다.\n"
+    "- 백엔드가 안 떠 있어서 fetch 자체가 실패하는 경우(네트워크 에러)도 잡아서 "
+    "'백엔드에 연결할 수 없습니다' 같은 안내를 화면에 띄운다. 콘솔에만 찍고 끝내지 않는다.\n"
+    "- 목록 조회는 첫 렌더 시 useEffect로 한 번 호출하고, 생성/수정/삭제 후에도 "
+    "다시 호출해서 화면을 갱신한다.\n"
+    "- CSS는 src/index.css 하나에 최소한으로 넣는다. 외부 폰트나 이미지를 "
+    "불러오지 않는다.\n"
+    "- 코드는 그대로 빌드·실행 가능해야 한다 (문법 오류·미완성 코드 금지).\n\n"
+    "반드시 아래 JSON 스키마 '그대로', 다른 말/마크다운 없이 JSON만 출력한다.\n"
+    "{\n"
+    '  "files": [\n'
+    '    {"path": "상대경로 (예: src/App.jsx)", "content": "파일 전체 내용"}\n'
+    "  ]\n"
+    "}"
+)
+
+
+def frontend_react_node(state: PipelineState) -> dict:
+    api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
+    user = (
+        f"[API 명세 - 이게 계약이다]\n{api_spec_json}\n\n"
+        f"[화면설계서 - 레이아웃 참고용]\n{state.get('screen_design', '(없음)')}\n\n"
+        f"{design_prompt_block()}"
+        "위 API 명세를 호출하는 React + Vite 프론트엔드를 작성해줘."
+    )
+
+    raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
+    try:
+        result = strip_json(raw)
+    except json.JSONDecodeError:
+        result = {"_parse_error": True, "_raw": raw}
+    return {"frontend_code": result}

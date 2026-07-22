@@ -1,0 +1,169 @@
+"""
+그래프 조립. 노드를 등록하고 엣지로 배선한다.
+
+현재(v9): requirements → {screen_design, data_model} → api_spec
+          → openapi_spec → consistency_check → review_gate
+          → (조건부) fan-out:
+               backend  → write_backend  → verify_backend  → (조건부 루프) | END
+               frontend → write_frontend → verify_frontend → END
+             | END (거부 시)
+
+openapi_spec은 api_spec을 정식 OpenAPI 3.0 문서로 규칙 기반 변환한다.
+consistency_check는 여전히 api_spec(내부 단순 포맷)을 보고 판단하며,
+openapi_spec은 나중에 schemathesis 등 외부 도구가 실제 서버를 검사할 때
+쓰는 산출물이다 (write_backend가 generated/backend/openapi.json으로 저장).
+
+review_gate가 이 파이프라인의 첫 조건부 라우팅 지점이다:
+  - consistency_report.passed == true  → 안 멈추고 바로 backend로
+  - passed == false                    → interrupt()로 멈춤. 사람이 승인하면
+                                          backend로, 거부하면 END로 (조건부 엣지)
+
+build_pipeline(checkpointer)에 checkpointer를 반드시 넘겨야 interrupt/resume이
+동작한다 (멈춘 지점의 상태를 기억해야 재개가 가능하므로). main.py에서
+MemorySaver를 만들어 넘긴다.
+
+review_gate 이후 새로 생긴 자기 수정 루프:
+  backend → write_backend(디스크에 씀) → verify_backend(fastapi만 실제 실행·검증)
+  → 조건부:
+      - verify_report.passed == True           → END
+      - passed == False AND retry_count < 최대  → backend로 루프백 (재시도, 실패 로그 포함)
+      - passed == False AND retry_count >= 최대 → END (사람이 나중에 로그 보고 판단)
+
+fastapi 이외의 스택은 verify_backend가 항상 passed=True로 통과시키므로 루프를
+안 탄다 (자동 실행 검증은 fastapi 전용, 다른 스택은 여전히 사람이 수동 검증).
+
+프론트 갈래는 백엔드와 나란히(fan-out) 돈다. 둘은 서로의 산출물을 안 보고
+api_spec만 공유하므로 순서를 정할 이유가 없다. verify_frontend는 서버를 안 띄우고
+파일에서 fetch 경로만 뽑아 대조하는 결정적 검사라, 지금은 진단만 하고 루프백은
+안 붙였다.
+
+구현체는 .env로 고른다: BACKEND_TARGET(fastapi/spring/express/typescript),
+FRONTEND_TARGET(vanilla/react). 둘 다 레지스트리 딕셔너리 조회이므로 스택을
+추가해도 이 파일의 배선은 안 바뀐다.
+
+아직 없음: 재시도 소진 시 사람에게 interrupt()로 명시적 알림 (지금은 조용히
+END로 빠지고 main.py가 리포트를 출력해서 사람이 보게 한다), 프론트 계약 위반 시
+루프백, 다른 스택으로의 백엔드 검증 확장, DB 연결.
+"""
+
+import os
+
+from langgraph.graph import StateGraph, END
+
+from .state import PipelineState
+from .nodes import (
+    requirements_node,
+    screen_design_node,
+    data_model_node,
+    api_spec_node,
+    openapi_spec_node,
+    consistency_check_node,
+    review_gate_node,
+    write_backend_node,
+    verify_backend_node,
+    write_frontend_node,
+    verify_frontend_node,
+    BACKEND_NODES,
+    FRONTEND_NODES,
+)
+
+MAX_BACKEND_RETRIES = 3
+
+
+def _route_after_review(state: PipelineState) -> list[str]:
+    """review_gate 이후 어디로 갈지 결정하는 조건부 엣지 함수.
+
+    리스트를 반환하면 LangGraph가 그만큼 fan-out 시킨다. 승인되면 backend와
+    frontend가 동시에 출발한다 - 둘 다 api_spec만 보고, 서로의 산출물을 안
+    보므로 순서가 없다.
+    """
+    return ["backend", "frontend"] if state.get("approved") else ["end"]
+
+
+def _route_after_verify(state: PipelineState) -> str:
+    """verify_backend 이후: 통과/재시도/포기 판단."""
+    report = state.get("verify_report") or {}
+    if report.get("passed"):
+        return "end"
+
+    retry_count = state.get("retry_count", 0)
+    if retry_count < MAX_BACKEND_RETRIES:
+        return "retry"
+    return "end"
+
+
+def _increment_retry(state: PipelineState) -> dict:
+    """재시도 카운터만 증가시키는 아주 작은 노드.
+    (조건부 엣지 함수 자체는 상태를 못 바꾸므로, 카운트 증가는 별도 노드로 뺀다.)"""
+    return {"retry_count": state.get("retry_count", 0) + 1}
+
+
+def build_pipeline(checkpointer=None):
+    g = StateGraph(PipelineState)
+
+    g.add_node("requirements", requirements_node)
+    g.add_node("screen_design", screen_design_node)
+    g.add_node("data_model", data_model_node)
+    g.add_node("api_spec", api_spec_node)
+    g.add_node("openapi_spec", openapi_spec_node)
+    g.add_node("consistency_check", consistency_check_node)
+    g.add_node("review_gate", review_gate_node)
+
+    target = os.getenv("BACKEND_TARGET", "fastapi").lower()
+    if target not in BACKEND_NODES:
+        options = ", ".join(BACKEND_NODES.keys())
+        raise ValueError(
+            f"알 수 없는 BACKEND_TARGET='{target}'. 사용 가능한 값: {options}"
+        )
+    g.add_node("backend", BACKEND_NODES[target])
+    g.add_node("write_backend", write_backend_node)
+    g.add_node("verify_backend", verify_backend_node)
+    g.add_node("bump_retry", _increment_retry)
+
+    fe_target = os.getenv("FRONTEND_TARGET", "vanilla").lower()
+    if fe_target not in FRONTEND_NODES:
+        options = ", ".join(FRONTEND_NODES.keys())
+        raise ValueError(
+            f"알 수 없는 FRONTEND_TARGET='{fe_target}'. 사용 가능한 값: {options}"
+        )
+    g.add_node("frontend", FRONTEND_NODES[fe_target])
+    g.add_node("write_frontend", write_frontend_node)
+    g.add_node("verify_frontend", verify_frontend_node)
+
+    g.set_entry_point("requirements")
+
+    # fan-out
+    g.add_edge("requirements", "screen_design")
+    g.add_edge("requirements", "data_model")
+
+    # fan-in
+    g.add_edge("screen_design", "api_spec")
+    g.add_edge("data_model", "api_spec")
+
+    g.add_edge("api_spec", "openapi_spec")
+    g.add_edge("openapi_spec", "consistency_check")
+    g.add_edge("consistency_check", "review_gate")
+
+    # 승인되면 backend / frontend 두 갈래로 fan-out (같은 api_spec을 소비)
+    g.add_conditional_edges(
+        "review_gate",
+        _route_after_review,
+        {"backend": "backend", "frontend": "frontend", "end": END},
+    )
+
+    # 프론트 갈래: 생성 → 쓰기 → 계약 대조(결정적, 진단만. 루프백은 아직 없음)
+    g.add_edge("frontend", "write_frontend")
+    g.add_edge("write_frontend", "verify_frontend")
+    g.add_edge("verify_frontend", END)
+
+    g.add_edge("backend", "write_backend")
+    g.add_edge("write_backend", "verify_backend")
+
+    g.add_conditional_edges(
+        "verify_backend",
+        _route_after_verify,
+        {"end": END, "retry": "bump_retry"},
+    )
+    g.add_edge("bump_retry", "backend")  # 재시도: backend로 루프백
+
+    return g.compile(checkpointer=checkpointer)

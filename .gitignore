@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+generated/
+
+# schemathesis가 수동 실행 때 남기는 캐시
+.schemathesis/
+
+# 에디터
+.vscode/
+.idea/
