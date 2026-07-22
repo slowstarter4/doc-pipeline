@@ -12,3 +12,7 @@ generated/
 # 에디터
 .vscode/
 .idea/
+
+# Claude Code 로컬 설정 (개인 권한 설정 + 쓰기 중 남는 임시 파일)
+.claude/settings.local.json
+.claude/*.tmp.*
