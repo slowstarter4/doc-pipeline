@@ -132,11 +132,16 @@ def print_frontend_result(result: dict):
 
 
 def main():
-    plan = Path("examples/todo_plan.md").read_text(encoding="utf-8")
+    # 기획문서 경로는 인자로 받는다: python main.py examples/shop_plan.md
+    plan_path = Path(sys.argv[1] if len(sys.argv) > 1 else "examples/todo_plan.md")
+    plan = plan_path.read_text(encoding="utf-8")
+    print(f"기획문서: {plan_path}\n")
 
     checkpointer = MemorySaver()
     app = build_pipeline(checkpointer=checkpointer)
-    config = {"configurable": {"thread_id": "todo-pipeline-1"}}
+    # thread_id를 기획문서마다 다르게 둔다 - 나중에 영속 checkpointer로 바꾸면
+    # 문서별로 승인 대기 상태가 섞이지 않는다.
+    config = {"configurable": {"thread_id": f"pipeline-{plan_path.stem}"}}
 
     result = app.invoke({"plan_doc": plan}, config=config)
 

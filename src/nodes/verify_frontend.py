@@ -31,7 +31,15 @@ SOURCE_SUFFIXES = {".html", ".js", ".jsx", ".ts", ".tsx", ".css"}
 # 거기엔 라이브러리 코드와 번들된 사본이 섞여 있어 없는 경로가 잔뜩 잡힌다.
 IGNORED_DIRS = {"node_modules", "dist", "build", ".vite"}
 
-# fetch(...)의 첫 인자가 문자열/템플릿 리터럴인 경우만 잡는다.
+# ${BASE}가 들어간 URL 리터럴. 호출을 어떻게 감싸든(래퍼 함수, axios, 변수에 담기)
+# URL 자체는 소스에 리터럴로 남으므로 이쪽이 훨씬 안정적이다.
+#
+# 처음엔 fetch(...)의 첫 인자만 봤는데, 도메인이 셋인 앱을 생성하니 LLM이
+# safeFetch(url, options) 래퍼를 만들어 썼고 - 그게 옳은 코드다 - 호출을 하나도
+# 못 잡았다. 검사기가 코드 스타일을 강요하면 안 된다.
+_URL_RE = re.compile(r"""[`'"]([^`'"]*\$\{\s*BASE\s*\}[^`'"]*)[`'"]""")
+
+# BASE 상수를 안 쓰고 경로를 직접 넣은 경우 (vanilla에서 흔하다).
 _FETCH_RE = re.compile(r"""fetch\(\s*[`'"]([^`'"]*)[`'"]""")
 
 
@@ -57,7 +65,7 @@ def _normalize(path: str) -> str:
 
 
 def _extract_calls(text: str) -> set[str]:
-    return {_normalize(m) for m in _FETCH_RE.findall(text)}
+    return {_normalize(m) for m in _URL_RE.findall(text) + _FETCH_RE.findall(text)}
 
 
 def _check_design_tokens(sources_text: str) -> list[str]:
@@ -125,6 +133,14 @@ def verify_frontend_node(state: PipelineState) -> dict:
     unused = sorted(spec_paths - called)
 
     logs = []
+    if not called:
+        # 호출이 하나도 없으면 위반도 0건이라 예전엔 그냥 통과했다. 실제로 프론트가
+        # API를 전혀 안 부르는 상태와 구분이 안 되므로 이건 실패로 친다.
+        logs.append(
+            "API 호출을 하나도 못 찾음. 프론트가 백엔드를 안 부르고 있거나, "
+            "URL을 리터럴로 안 쓰고 조립하고 있다 (검사기가 ${BASE}가 들어간 "
+            "URL 리터럴을 찾는다)."
+        )
     if unknown:
         logs.append(
             "명세에 없는 경로를 호출함 (계약 위반):\n"
@@ -143,7 +159,8 @@ def verify_frontend_node(state: PipelineState) -> dict:
 
     return {
         "frontend_report": {
-            "passed": not unknown,  # 안 쓰는 경로는 실패로 치지 않는다
+            # 안 쓰는 경로는 실패로 안 치지만, 호출이 아예 없는 건 실패다.
+            "passed": bool(called) and not unknown,
             "logs": "\n".join(logs),
         }
     }
@@ -167,6 +184,17 @@ if __name__ == "__main__":
       fetch('/api/legacy');
     """
     assert _extract_calls(html) == {"/todos", "/todos/{}/complete", "/api/legacy"}
+
+    # 래퍼 함수를 거쳐도 URL 리터럴만 있으면 잡아야 한다. 이걸 못 잡아서
+    # "호출 0건인데 계약 검사 통과"가 났었다.
+    wrapped = """
+      const BASE = "http://localhost:8000";
+      async function safeFetch(url, options) { return fetch(url, options); }
+      const books = await safeFetch(`${BASE}/books`, undefined, setError);
+      await safeFetch(`${BASE}/loans/${id}/return`, { method: 'PUT' });
+      let url = `${BASE}/books`;
+    """
+    assert _extract_calls(wrapped) == {"/books", "/loans/{}/return"}
 
     assert _is_ignored(Path("generated/frontend/node_modules/react/index.js"))
     assert _is_ignored(Path("generated/frontend/dist/assets/index-abc123.js"))
