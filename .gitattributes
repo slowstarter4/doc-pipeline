@@ -1,0 +1,4 @@
+# gradle wrapper: gradlew는 Unix 셸 스크립트라 반드시 LF여야 한다(CRLF면 Mac/Linux에서
+# `\r` 때문에 실행 실패). jar는 바이너리로 명시해 diff/eol 변환을 막는다.
+assets/gradle-wrapper/gradlew text eol=lf
+assets/gradle-wrapper/gradle/wrapper/gradle-wrapper.jar binary
