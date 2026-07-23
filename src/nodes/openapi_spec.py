@@ -164,6 +164,15 @@ def openapi_spec_node(state: PipelineState) -> dict:
 
         operation = {"summary": ep.get("summary", ""), "responses": responses}
 
+        # 업무 규칙(rules)은 OpenAPI에 대응하는 자리가 없어서 description으로 옮긴다.
+        # 계약의 일부인데 openapi.json에만 빠져 있으면, 이 문서를 보고 작업하는
+        # 사람이나 도구가 제약을 모른 채 구현하게 된다.
+        rules = ep.get("rules") or []
+        if rules:
+            operation["description"] = "업무 규칙:\n" + "\n".join(
+                f"- {r}" for r in rules
+            )
+
         # path parameter 자동 추출 (예: /todos/{id} -> id)
         # ERD에 해당 필드가 있으면 그 타입을 쓰고, 없으면 string으로 fallback한다.
         for match in re.findall(r"\{(\w+)\}", path):

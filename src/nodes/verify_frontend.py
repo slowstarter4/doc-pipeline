@@ -31,16 +31,21 @@ SOURCE_SUFFIXES = {".html", ".js", ".jsx", ".ts", ".tsx", ".css"}
 # 거기엔 라이브러리 코드와 번들된 사본이 섞여 있어 없는 경로가 잔뜩 잡힌다.
 IGNORED_DIRS = {"node_modules", "dist", "build", ".vite"}
 
-# ${BASE}가 들어간 URL 리터럴. 호출을 어떻게 감싸든(래퍼 함수, axios, 변수에 담기)
-# URL 자체는 소스에 리터럴로 남으므로 이쪽이 훨씬 안정적이다.
+# ${BASE}가 들어간 백틱 템플릿 리터럴. 호출을 어떻게 감싸든(래퍼 함수, axios,
+# 변수에 담기) URL 자체는 소스에 리터럴로 남으므로 이쪽이 훨씬 안정적이다.
 #
 # 처음엔 fetch(...)의 첫 인자만 봤는데, 도메인이 셋인 앱을 생성하니 LLM이
 # safeFetch(url, options) 래퍼를 만들어 썼고 - 그게 옳은 코드다 - 호출을 하나도
 # 못 잡았다. 검사기가 코드 스타일을 강요하면 안 된다.
-_URL_RE = re.compile(r"""[`'"]([^`'"]*\$\{\s*BASE\s*\}[^`'"]*)[`'"]""")
+#
+# 닫는 구분자로 백틱만 본다(따옴표는 제외). 쿼리스트링을 조립하는 삼항연산자
+# `${BASE}/books${qs ? '?' + qs : ''}`처럼 ${...} 안에 홑따옴표가 들어오면,
+# 따옴표에서 멈추는 정규식은 거기서 잘려 "${qs " 같은 반쪽짜리를 잡는다.
+# 백틱 템플릿 리터럴은 백틱으로만 닫히므로, 내부에 따옴표가 있어도 안전하다.
+_TEMPLATE_URL_RE = re.compile(r"`([^`]*\$\{\s*BASE\s*\}[^`]*)`")
 
-# BASE 상수를 안 쓰고 경로를 직접 넣은 경우 (vanilla에서 흔하다).
-_FETCH_RE = re.compile(r"""fetch\(\s*[`'"]([^`'"]*)[`'"]""")
+# BASE 상수를 안 쓰고 경로를 따옴표 문자열로 직접 넣은 경우 (vanilla에서 흔하다).
+_FETCH_RE = re.compile(r"""fetch\(\s*['"]([^'"]*)['"]""")
 
 
 def _is_ignored(path: Path) -> bool:
@@ -53,19 +58,29 @@ def _normalize(path: str) -> str:
     `${BASE}/todos/${id}`  ->  /todos/{}
     /todos/{id}            ->  /todos/{}
     http://localhost:8000/todos?x=1 -> /todos
+    `${BASE}/books${qs ? '?' + qs : ''}` -> /books   (쿼리스트링 조립은 버린다)
+
+    path parameter(`/resource/${id}`)와 쿼리스트링 조립(`${BASE}/books${qs}`)을
+    "/" 유무로 구분한다: "/" 바로 뒤에 오는 ${...}만 경로 파라미터로 인정하고,
+    그 외의 ${...}는 거기서부터 통째로 잘라낸다. 순서가 중요하다 - 쿼리스트링
+    조립 안에 리터럴 "?"가 들어있을 수 있어서(예: '?' + qs), 그걸 먼저 처리하지
+    않고 "?"로 먼저 자르면 식 중간에서 잘려버린다.
     """
-    p = re.sub(r"\$\{[^}]*\}", "{}", path)  # 템플릿 치환자
+    p = re.sub(r"\$\{\s*BASE\s*\}", "", path)  # ${BASE} 접두사 제거
     p = re.sub(r"^https?://[^/]*", "", p)  # 절대 URL의 호스트 부분
-    p = re.split(r"[?#]", p)[0]  # 쿼리스트링/해시
-    if p.startswith("{}"):
-        p = p[2:]  # 맨 앞 ${BASE} 같은 베이스 URL 치환자
+    p = re.sub(r"(?<=/)\$\{[^}]*\}", "{}", p)  # "/" 뒤의 ${...} = path parameter
+    p = re.split(r"\$\{", p)[0]  # 남은 ${...} = 쿼리스트링 조립, 거기서부터 버림
+    p = re.split(r"[?#]", p)[0]  # 리터럴 쿼리스트링/해시
     p = re.sub(r"\{[^}]*\}", "{}", p)  # 명세의 {id} -> {}
     p = "/" + p.strip("/")
     return p
 
 
 def _extract_calls(text: str) -> set[str]:
-    return {_normalize(m) for m in _URL_RE.findall(text) + _FETCH_RE.findall(text)}
+    return {
+        _normalize(m)
+        for m in _TEMPLATE_URL_RE.findall(text) + _FETCH_RE.findall(text)
+    }
 
 
 def _check_design_tokens(sources_text: str) -> list[str]:
@@ -177,6 +192,12 @@ if __name__ == "__main__":
     assert _normalize("${BASE}/todos") == "/todos"
     assert _normalize("/todos/{id}/complete") == "/todos/{}/complete"
 
+    # 도서관 기획서를 돌렸을 때 실제로 터진 버그: 쿼리스트링을 삼항연산자로
+    # 조립하면 ${...} 안에 홑따옴표가 들어온다. 이걸 "/books"로 정리하지 못하고
+    # "/books${qs "처럼 반쪽만 잡아서, 위반 0건인데 통과로 잘못 판정났었다.
+    assert _normalize("${BASE}/books${qs ? '?' + qs : ''}") == "/books"
+    assert _normalize("${BASE}/loans${qs ? '?' + qs : ''}") == "/loans"
+
     html = """
       const BASE = "http://localhost:8000";
       fetch(`${BASE}/todos`);
@@ -195,6 +216,16 @@ if __name__ == "__main__":
       let url = `${BASE}/books`;
     """
     assert _extract_calls(wrapped) == {"/books", "/loans/{}/return"}
+
+    # 실제 도서관 프론트가 쓴 삼항연산자 쿼리스트링 조립. 이걸 못 잡아서 호출
+    # 0건 -> "명세의 경로 N개를 모두 정확히 호출함"으로 잘못 통과했었다.
+    qs_wrapped = """
+      const BASE = "http://localhost:8000";
+      const qs = params.toString()
+      const res = await fetch(`${BASE}/books${qs ? '?' + qs : ''}`)
+      const res2 = await fetch(`${BASE}/loans${qs ? '?' + qs : ''}`)
+    """
+    assert _extract_calls(qs_wrapped) == {"/books", "/loans"}
 
     assert _is_ignored(Path("generated/frontend/node_modules/react/index.js"))
     assert _is_ignored(Path("generated/frontend/dist/assets/index-abc123.js"))
