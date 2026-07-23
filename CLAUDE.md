@@ -71,15 +71,30 @@
   루프와 상성이 나쁠 수 있다** — verify 실패 로그를 프롬프트에 실어 재생성할 때 로그가
   매번 다르면 키가 달라져 정상 미스지만, 로그가 같은데 재생성을 기대하는 경우엔 캐시가
   같은 답을 돌려줄 수 있다(그럴 땐 `LLM_CACHE=0`).
-- 다음: spring도 같은 전환(sqlite/H2 등 JVM 쪽 방식). **한 스택씩** 확인한다("진단과 수정
-  분리"). 그 뒤에야 Postgres+도커를 얹는다(sqlite 영속성이 4스택에 서면 Postgres 전환은
-  DDL 방언+커넥션 문자열만 바뀌는 국소 변경이 된다).
+- **spring도 sqlite로 전환** (`backend_spring.py`). in-memory(ArrayList) → org.xerial:sqlite-jdbc
+  + JdbcTemplate(JPA 없이). H2 대신 sqlite-jdbc를 고른 결정적 이유: schema_ddl이 뽑는 DDL이
+  sqlite 문법(`AUTOINCREMENT`)이라 H2(`IDENTITY`)면 그 산출물이 안 먹는다 — sqlite-jdbc로
+  가야 4스택이 진짜 같은 sqlite 파일·같은 DDL을 공유한다. sqlite-jdbc는 JAR에 네이티브가
+  번들이라 빌드 문제 없다. DDL은 `src/main/resources/schema.sql`로 저장 →
+  `spring.sql.init.mode=always`로 앱 시작 시 자동 실행. id는 GeneratedKeyHolder, date는
+  TEXT(LocalDate.parse/toString), boolean은 0/1. 영속성·업무규칙 3개·직렬화 전부 통과.
+  - **버그 1건 승격:** `BookService`가 `java.util.Map`을 import하는 대신 같은 이름의 빈
+    내부 클래스 `Map`을 선언해 `queryForMap` 반환 타입과 충돌 → 컴파일 실패. "JDK 클래스명과
+    겹치는 클래스 선언 금지, 필요하면 import" 규칙 추가.
+  - **미해결(범위 밖): gradlew 래퍼가 생성물에 없다.** LLM은 바이너리 jar(gradle-wrapper.jar)를
+    못 만드는 구조적 한계다. `RUN_INSTRUCTIONS`의 `./gradlew bootRun`이 그대로는 안 돌고
+    시스템에 설치된 gradle이 필요하다. 검증 때는 캐시된 gradle 배포판으로 우회했다.
+- **DB 영속성 축을 4스택 전부 sqlite로 통일 완료** (fastapi=stdlib sqlite3, express·typescript=
+  node:sqlite 내장, spring=sqlite-jdbc). 넷 다 재기동 후 데이터 유지 검증됨. **다음: Postgres+
+  도커.** 이제 sqlite가 4스택에 서 있으니 Postgres 전환은 DDL 방언(schema_ddl에 방언 분기)+
+  커넥션 문자열만 바뀌는 국소 변경이 된다. 도커는 파이프라인이 자동 기동하지 말고(schemathesis·
+  프론트 npm처럼) 사람이 띄우고 검사만 자동화하는 게 이 repo의 반복된 결론.
 
 **스택별 실사용 검증 현황 (2026-07-23 기준):**
 | 스택 | 방식 | 상태 |
 |---|---|---|
 | fastapi | 자동 검증(verify_backend: 스모크+영속성) + 브라우저 | ✅ |
-| spring | 자동 검증은 대상 밖(건너뜀) → 수동 `gradlew bootRun` + 브라우저 | ✅ (버그 3개 발견·수정, 아래) |
+| spring | `backend-runtime-verifier` 에이전트로 gradle 빌드+기동 + CRUD/업무규칙 + **sqlite-jdbc 영속성**. (초기 버그 3개는 아래, sqlite 전환 시 1개 더) | ✅ (gradlew 래퍼 누락은 미해결) |
 | express | `backend-runtime-verifier` 에이전트로 실제 기동 + CRUD/업무규칙 스모크 + **node:sqlite 영속성**(재기동 후 데이터 유지) | ✅ (id 문자열화 버그 1개 수정) |
 | typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 스모크 + **node:sqlite 영속성** (library_plan.md) | ✅ (FK 문자열화·TS2352 버그 2개 수정) |
 
