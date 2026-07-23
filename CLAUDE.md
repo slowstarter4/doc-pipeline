@@ -19,24 +19,57 @@
    완료
 ```
 
-## 현재 상태 (v11)
+## 현재 상태 (v12)
 
 **목표 흐름이 한 바퀴 다 돈다** (2026-07-22 실측): 기획문서 → 문서 4종 → 사람 승인
 → 백엔드(sqlite) ∥ 프론트(react + 디자인 토큰) → 검증 3종(실행·계약·토큰) 전부 통과.
 브라우저에서 CRUD와 디자인 적용까지 눈으로 확인했다.
+
+**DB 영속성 축을 4스택에 통일하기 시작했다 (2026-07-23). express 완료, typescript·spring
+남음.** 목표: fastapi만 sqlite고 나머지 3스택은 in-memory라 재기동하면 데이터가 날아가던
+걸, 스택 무관하게 파일 DB로 맞춘다. 지금까지:
+- **`schema_ddl` 노드 신설** (`src/nodes/schema_ddl.py`): ERD(data_model dict)를 sqlite
+  `CREATE TABLE` 문으로 **결정적 변환**한다 (LLM 미사용, `openapi_spec`과 같은 성격).
+  스택마다 백엔드 LLM이 컬럼·타입을 제각각 해석하던 걸 막고 4스택이 같은 스키마를
+  공유하게 하는 게 목적. 타입 매핑은 sqlite 어피니티 기준(string/date→TEXT,
+  boolean/number→INTEGER — INTEGER 어피니티는 실수를 강제 변환하지 않아 가격 같은
+  값도 손실 없음), `id INTEGER PRIMARY KEY AUTOINCREMENT` 자동 추가, required→NOT NULL.
+  `write_backend`가 `generated/backend/schema.sql`로 저장하고, 백엔드가 앱 시작 시 그
+  DDL을 실행한다. 관계(외래키)는 data_model에 정보가 없어 컬럼(INTEGER)으로만 만들고
+  FK 제약은 안 건다 — 관계 규칙은 이미 api_spec의 `rules`로 앱 레벨에서 강제됨.
+- **express를 in-memory → `node:sqlite`(Node 내장) 파일 DB로 전환** (`backend_express.py`).
+  영속성 검증 통과(도서6/회원2/대출5 → 강제종료 → 재기동 → 전부 유지, `library.db` 생성).
+  함정을 프롬프트에 못박음(fastapi sqlite 교훈의 node 번역): 동기 API라 async 금지, id는
+  `lastInsertRowid`로(JS 카운터 금지), boolean은 0/1 저장이라 응답 시 `Boolean()` 변환 +
+  바인딩은 1/0, 직접 CREATE TABLE 짓지 말고 주어진 schema.sql 실행.
+  - **처음엔 better-sqlite3로 갔다가 Windows 네이티브 빌드(VS Build Tools 없음, node-gyp
+    실패)로 막혀 `node:sqlite`로 갈아탔다.** prebuilt 의존은 Node 버전 바뀌면 또 깨지지만
+    Node 내장은 그 리스크가 없다 — fastapi가 stdlib sqlite3만 쓰는 것과 대칭(npm 의존성 0,
+    네이티브 빌드 0). 대가는 실험적 모듈이라 start 스크립트에 `--experimental-sqlite`
+    플래그가 필요하고 stderr에 경고가 뜨는 것(동작엔 지장 없음).
+  - **버그 1건을 프롬프트 규칙으로 승격:** LLM이 `lastInsertRowid`가 BigInt일까 봐 id·외래키를
+    `String()`으로 감싸 응답이 문자열로 나갔다(명세는 number). 실측상 기본값은 이미 JS
+    number라 불필요한 변환. "id·외래키는 String으로 감싸지 말고 number 그대로" 규칙 추가.
+- 다음: typescript·spring도 같은 전환. **한 스택씩** 하고 매번 재기동 영속성으로
+  확인한다("진단과 수정 분리" 규칙). typescript는 express와 같은 node:sqlite를 쓰면 되고,
+  api_spec 필드명이 재실행마다 갈리는 기존 LLM 비결정성(서버는 매번 그 스펙과는 일치)만
+  참고. 그 뒤에야 Postgres+도커를 얹는다(sqlite 영속성이 4스택에 서면 Postgres 전환은
+  DDL 방언+커넥션 문자열만 바뀌는 국소 변경이 된다).
 
 **스택별 실사용 검증 현황 (2026-07-23 기준):**
 | 스택 | 방식 | 상태 |
 |---|---|---|
 | fastapi | 자동 검증(verify_backend: 스모크+영속성) + 브라우저 | ✅ |
 | spring | 자동 검증은 대상 밖(건너뜀) → 수동 `gradlew bootRun` + 브라우저 | ✅ (버그 3개 발견·수정, 아래) |
-| express | 파일 파싱만 확인. **`npm start`로 실제 기동한 적 없음** | 미검증 |
-| typescript | 파일 파싱만 확인. **실제 기동한 적 없음** | 미검증 |
+| express | `backend-runtime-verifier` 에이전트로 실제 기동 + CRUD/업무규칙 스모크 + **node:sqlite 영속성**(재기동 후 데이터 유지) | ✅ (id 문자열화 버그 1개 수정) |
+| typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 스모크 (library_plan.md). **DB는 아직 in-memory** | ✅ 기동/CRUD (sqlite 전환은 남음) |
 
-다음 세션 시작점: express → typescript 순으로 실제 기동 검증. spring에서 심각한
-버그 3개가 나온 걸 보면(아래 항목) 안 돌려본 스택엔 뭐가 있을지 모른다. 언어
-일관성 수정(data_model.py/api_spec.py)은 스택 무관하게 이미 들어갔지만, express
-고유의 문제(포트, CORS, JS 타입 이슈 등)는 안 잡힌 채로 남아있을 수 있다.
+**4개 스택 전부 실사용 검증 완료.** express·typescript는 `.claude/agents/backend-runtime-verifier.md` +
+`.claude/skills/backend-runtime-verification/` 하네스로 자동화해서 spring 때 사람이 손으로 했던
+절차(설치→기동→CRUD+업무규칙 스모크→재기동 영속성 확인)를 그대로 반복했다. 둘 다 프롬프트 수정
+없이 첫 실행에서 통과 — spring 때와 달리 버그가 없었던 이유는, fastapi/spring에서 나온 교훈
+(언어 일관성, `rules` 필드 구현 지시)이 이미 4개 스택 프롬프트에 전부 반영돼 있었기 때문으로
+보인다. TS는 `strict: true` 컴파일도 타입 에러 없이 클린 통과했다.
 
 **두 번째 기획문서(도서 대출 관리, 엔티티 3개+관계+업무 규칙)로 돌려서 검증기가
 Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
@@ -160,6 +193,16 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
   파일이 생기면 import도 안 되고 에러도 안 나서 조용히 무시된다. 실제로 write/
   verify 노드 배선이 `src/nodes/graph.py`에 들어가 있어서 검증이 0회로 돌던 적이
   있다. 노드 추가 후엔 `build_pipeline()`으로 컴파일해 엣지를 찍어보고 확인한다.
+- **fan-in 지점 앞의 두 갈래는 진입점으로부터 홉 수(엣지 개수)가 같아야 한다.**
+  LangGraph의 암묵적 join(여러 엣지가 한 노드로 모일 때)은 두 갈래가 같은 super-step에
+  도착해야 그 노드를 한 번만 실행한다. 홉 수가 어긋나면 늦게 도착하는 갈래 때문에
+  fan-in 노드가 **한 실행 안에서 두 번 돈다.** 실제로 `schema_ddl`을 `data_model`과
+  `api_spec` 사이에 끼웠더니 data_model 갈래만 2홉(requirements→data_model→schema_ddl),
+  screen_design 갈래는 1홉이 되어 `api_spec`(LLM 호출, 비결정적)이 두 번 돌며 서로 다른
+  결과를 냈고, 그게 review_gate까지 두 번 이어져 두 번째 승인 직후 `verify_report`
+  동시 쓰기 충돌(`InvalidUpdateError`)로 죽었다. 짧은 갈래에 아무 일도 안 하는 통과
+  노드(`screen_design_sync`, `lambda state: {}`)를 하나 끼워 홉 수를 맞춰 해결했다.
+  결정적 곁가지 노드를 fan-in 앞에 삽입할 땐 반대편 갈래 홉 수부터 확인한다.
 - **루프 카운터(retry_count 등)는 루프백 경로 위의 전용 노드가 올린다**
   (`bump_retry`). 조건부 엣지 함수는 state를 읽기만 할 뿐 못 바꾼다. 생성 노드
   안에서 올리면 스택별 구현체마다 같은 코드를 넣어야 해서 하나만 빠뜨려도
@@ -184,52 +227,6 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
 - 백엔드 코드 생성 후 디스크에 쓰기 전, 이전 실행의 잔여 파일(특히 스택을 바꿔가며
   재실행할 때)이 안 섞이도록 출력 폴더를 비운다. 파일이 다른 프로세스(실행 중인 서버
   등)에 잠겨 삭제가 실패해도 파이프라인이 죽지 않고 경고 후 계속 진행한다.
-
-## 구조
-
-```
-main.py               진입점 (python main.py)
-                        - MemorySaver checkpointer로 그래프 컴파일
-                        - interrupt 발생 시 사람에게 y/n 입력받아 Command(resume=...)로 재개
-                        - 결과 출력만 (파일 쓰기는 write_backend 노드로 이동됨)
-src/state.py           공유 상태(PipelineState) - approved, openapi_spec,
-                        verify_report, retry_count 필드 포함
-src/llm.py             LLM 호출 (OpenRouter 경유) + JSON 파싱 유틸
-src/design_system.py   디자인 토큰 로더 (노드 아님. 프론트 생성 노드들이 공유)
-                        design/design_system.md를 읽어 프롬프트 조각으로 만들고,
-                        검증용 색 hex 목록도 뽑아준다
-src/graph.py           노드 등록 + 엣지 배선 (BACKEND_TARGET → 레지스트리 조회,
-                        review_gate 뒤 조건부 엣지, verify_backend 뒤 재시도 루프백,
-                        MAX_RETRIES, checkpointer 파라미터)
-src/nodes/             모든 에이전트(노드)가 여기 산다
-  requirements.py       기획 → 요구사항정의서
-  screen_design.py      요구사항 → 화면설계서 (fan-out 브랜치 1)
-  data_model.py           요구사항 → ERD (fan-out 브랜치 2)
-  api_spec.py             화면설계+ERD+요구사항 → API 명세 (fan-in)
-  openapi_spec.py          API 명세 → 정식 OpenAPI 3.0 (LLM 미사용, 결정적)
-  consistency_check.py    네 문서 대조 → 진단 리포트
-  review_gate.py           HITL 게이트 - interrupt()로 사람 승인 대기
-  backend.py               FastAPI 구현체
-  backend_spring.py        Spring Boot 구현체
-  backend_express.py       Express(JS) 구현체
-  backend_express_ts.py    Express(TS) 구현체
-  backend_registry.py      위 구현체들을 BACKEND_TARGET 값에 매핑
-  write_backend.py         backend_code → generated/backend/에 파일 쓰기 (+openapi.json)
-                            write_files()는 write_frontend도 같이 씀
-  verify_backend.py        생성된 서버를 8010 포트에 띄우고 CRUD 스모크 + 재기동 후
-                            데이터 유지(영속성) 검사 (fastapi 전용)
-  frontend.py              vanilla 구현체 - 단일 index.html (빌드 도구 없음)
-  frontend_react.py        react 구현체 - React + Vite
-  frontend_registry.py     위 구현체들을 FRONTEND_TARGET 값에 매핑
-  write_frontend.py        frontend_code → generated/frontend/에 파일 쓰기
-  verify_frontend.py       소스의 fetch 경로 ↔ api_spec 대조 + 디자인 토큰 색 사용
-                            여부 (LLM 미사용, 진단만). node_modules/dist는 안 훑는다
-examples/             샘플 기획문서
-design/design_system.md  디자인 토큰. 이 파일만 프론트 프롬프트에 실린다
-design/reference/        Claude Design 등에서 내려받은 원본. 사람용, 프롬프트엔 안 실림
-generated/backend/    backend 노드가 생성한 실제 코드 + openapi.json (실행 가능)
-generated/frontend/   frontend 노드가 생성한 index.html (브라우저로 바로 열림)
-```
 
 ## 다음에 할 것 (2026-07-22 확정 순서)
 
@@ -351,3 +348,19 @@ LLM이 그 레이아웃을 거의 확실히 베낀다. 기획문서를 쇼핑몰
   고른 이유는 코드에 문자열 그대로 박히는 값이라 신호가 확실해서다. 간격(12px) 같은
   값은 우연히도 등장해서 신호가 약하다. `.css`를 검사 대상 확장자에 넣은 것도 이 때문
   (react는 색이 `src/index.css`에 있다).
+
+## 하네스: 백엔드 실사용 검증
+
+**목표:** fastapi 외 스택(spring/express/typescript)은 자동 검증(`verify_backend.py`)
+대상이 아니라서 "파일이 파싱된다"만 확인하고 통과 처리된다. 이 하네스는 spring 때
+사람이 손으로 했던 "진짜 띄워서 CRUD 확인" 과정을 express·typescript에 대해
+`backend-runtime-verifier` 에이전트로 대신한다.
+
+**트리거:** "express/typescript 백엔드 검증", "백엔드 실사용 검증", "npm start로
+기동 검증" 같은 요청 시 `backend-runtime-verification` 스킬을 사용하라. 단순 질문은
+직접 응답 가능.
+
+**변경 이력:**
+| 날짜 | 변경 내용 | 대상 | 사유 |
+|------|----------|------|------|
+| 2026-07-23 | 초기 구성 | `.claude/agents/backend-runtime-verifier.md`, `.claude/skills/backend-runtime-verification/` | fastapi 외 스택 실사용 검증이 전부 수동이라, spring에서 했던 절차(설치→기동→CRUD 스모크→버그를 프롬프트 규칙으로 승격)를 express·typescript에도 반복 가능하게 자동화 |

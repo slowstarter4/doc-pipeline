@@ -1,6 +1,7 @@
 from .requirements import requirements_node
 from .screen_design import screen_design_node
 from .data_model import data_model_node
+from .schema_ddl import schema_ddl_node
 from .api_spec import api_spec_node
 from .openapi_spec import openapi_spec_node
 from .consistency_check import consistency_check_node
@@ -16,6 +17,7 @@ __all__ = [
     "requirements_node",
     "screen_design_node",
     "data_model_node",
+    "schema_ddl_node",
     "api_spec_node",
     "openapi_spec_node",
     "consistency_check_node",

@@ -55,6 +55,7 @@ from .nodes import (
     requirements_node,
     screen_design_node,
     data_model_node,
+    schema_ddl_node,
     api_spec_node,
     openapi_spec_node,
     consistency_check_node,
@@ -104,6 +105,7 @@ def build_pipeline(checkpointer=None):
     g.add_node("requirements", requirements_node)
     g.add_node("screen_design", screen_design_node)
     g.add_node("data_model", data_model_node)
+    g.add_node("schema_ddl", schema_ddl_node)
     g.add_node("api_spec", api_spec_node)
     g.add_node("openapi_spec", openapi_spec_node)
     g.add_node("consistency_check", consistency_check_node)
@@ -136,9 +138,23 @@ def build_pipeline(checkpointer=None):
     g.add_edge("requirements", "screen_design")
     g.add_edge("requirements", "data_model")
 
-    # fan-in
-    g.add_edge("screen_design", "api_spec")
-    g.add_edge("data_model", "api_spec")
+    # data_model은 결정적 DDL 변환(schema_ddl)을 거쳐 api_spec으로 간다. schema_ddl은
+    # openapi_spec과 같은 곁가지 성격(LLM 없는 결정적 변환)이라 직렬로 끼워도 지연이
+    # 없다. data_model 결과는 state에 남으므로 api_spec은 여전히 ERD를 읽는다.
+    g.add_edge("data_model", "schema_ddl")
+
+    # fan-in: api_spec은 screen_design(병렬)과 schema_ddl(data_model 경유) 둘 다 기다린다.
+    # LangGraph의 암묵적 join은 두 갈래가 requirements로부터 같은 홉 수로 도착해야
+    # api_spec을 한 번만 실행한다. schema_ddl이 끼면서 data_model 쪽만 2홉(requirements
+    # → data_model → schema_ddl)이 되고 screen_design은 1홉이라 어긋난다 - 실제로 이
+    # 상태에서 api_spec(LLM 호출, 비결정적)이 한 실행 안에서 두 번 돌아 서로 다른 결과를
+    # 냈고, 그게 review_gate까지 두 번 이어져 두 번째 승인 직후 verify_report 동시 쓰기
+    # 충돌(InvalidUpdateError)로 죽었다. screen_design 쪽에 아무 일도 안 하는 통과 노드를
+    # 하나 끼워 넣어 홉 수를 맞춘다.
+    g.add_node("screen_design_sync", lambda state: {})
+    g.add_edge("screen_design", "screen_design_sync")
+    g.add_edge("screen_design_sync", "api_spec")
+    g.add_edge("schema_ddl", "api_spec")
 
     g.add_edge("api_spec", "openapi_spec")
     g.add_edge("openapi_spec", "consistency_check")

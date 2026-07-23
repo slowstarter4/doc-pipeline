@@ -58,6 +58,12 @@ def write_backend_node(state: PipelineState) -> dict:
             encoding="utf-8",
         )
 
+    # ERD의 결정적 DDL도 함께 저장한다. 백엔드가 이 스키마를 그대로 물어 DB를
+    # 초기화하므로(스택 간 스키마 공유), 사람이 스키마를 눈으로 확인하는 근거도 된다.
+    ddl = state.get("schema_ddl")
+    if ddl:
+        (BACKEND_OUT_DIR / "schema.sql").write_text(ddl, encoding="utf-8")
+
     # 이전 시도의 리포트를 지운다 - 안 지우면 verify_backend가 낡은 파싱 실패
     # 리포트를 보고 검증을 건너뛴다.
     return {"verify_report": None}

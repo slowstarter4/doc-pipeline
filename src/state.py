@@ -16,6 +16,7 @@ class PipelineState(TypedDict, total=False):
     requirements: Optional[str]  # 요구사항정의서
     screen_design: Optional[str]  # 화면설계서 (markdown, fan-out)
     data_model: Optional[dict]  # ERD (JSON, fan-out)
+    schema_ddl: Optional[str]  # ERD의 결정적 sqlite DDL 변환 (백엔드가 이 스키마를 공유)
     api_spec: Optional[dict]  # API 명세 (OpenAPI-lite, 공유 계약. fan-in 이후 도출)
     openapi_spec: Optional[dict]  # 정식 OpenAPI 3.0 문서 (api_spec의 결정적 변환)
     consistency_report: Optional[dict]  # 일관성 체크 리포트 (진단만, 자동 수정 없음)
