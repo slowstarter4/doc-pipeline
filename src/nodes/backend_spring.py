@@ -16,10 +16,20 @@ import json
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
 
+# Spring Boot 내장 톰캣의 기본 포트와 같은 값이지만, 기본값에 기대지 않고
+# application.properties에 명시적으로 적게 한다 (아래 프롬프트 참고). frontend
+# 생성 노드가 BASE 상수를 맞추는 데도 이 값을 쓴다 (backend_registry.BACKEND_PORTS
+# 경유) - 스택마다 포트가 다 달라서(8000/8080/5001/5002) 프론트 프롬프트에 숫자를
+# 직접 박으면 스택 바꿀 때마다 어긋난다.
+PORT = 8080
+
 _SCHEMA_HINT = (
     "너는 API 명세와 데이터 모델을 보고 실제로 동작하는 Java Spring Boot 백엔드를 "
     "작성하는 백엔드 개발자다. 다음 규칙을 반드시 지킨다:\n"
     "- API 명세에 정의된 엔드포인트만 구현한다. 명세에 없는 엔드포인트를 추가하지 않는다.\n"
+    f"- 서버는 반드시 포트 {PORT}에서 리스닝한다. src/main/resources/application.properties에 "
+    f"server.port={PORT}를 명시한다 (내장 톰캣의 기본값에 기대지 않는다 - 프론트엔드가 "
+    "정확히 이 포트로 호출하도록 만들어졌으므로, 기본값이 바뀌면 연결이 끊긴다).\n"
     "- 각 엔드포인트의 rules에 적힌 업무 규칙을 빠짐없이 구현한다. rules는 필드나 "
     "타입으로 표현되지 않는 제약(거부 조건, 자동 계산·기록되는 값, 상태 전이 제한)이며 "
     "계약의 일부다. 규칙 위반으로 요청을 거부할 때는 400과 함께 어떤 규칙에 걸렸는지 "

@@ -10,6 +10,11 @@ import json
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
 
+# express(5001)와 겹치지 않는 값. frontend 생성 노드가 BASE 상수를 맞추는 데도
+# 이 값을 쓴다 (backend_registry.BACKEND_PORTS 경유) - 스택마다 포트가 다 달라서
+# (8000/8080/5001/5002) 프론트 프롬프트에 숫자를 직접 박으면 스택 바꿀 때마다 어긋난다.
+PORT = 5002
+
 _SCHEMA_HINT = (
     "너는 API 명세와 데이터 모델을 보고 실제로 동작하는 Node.js + Express + TypeScript "
     "백엔드를 작성하는 백엔드 개발자다. 다음 규칙을 반드시 지킨다:\n"
@@ -21,7 +26,7 @@ _SCHEMA_HINT = (
     "- ERD에 정의된 필드로 TypeScript interface(또는 type)를 정의하고 사용한다.\n"
     "- 데이터는 in-memory 배열로 저장한다 (DB 연동 없음, 범위 밖).\n"
     "- ES modules 또는 CommonJS 중 하나로 일관되게 작성하고, tsconfig.json을 포함한다.\n"
-    "- 서버는 반드시 포트 5002에서 리스닝한다 (app.listen(5002, ...)). 3000, 8080 "
+    f"- 서버는 반드시 포트 {PORT}에서 리스닝한다 (app.listen({PORT}, ...)). 3000, 8080 "
     "같은 흔한 기본 포트는 Windows 환경에서 예약되어 있거나 다른 스택과 충돌하는 "
     "경우가 많으므로 쓰지 않는다.\n"
     "- 존재하지 않는 id로 요청 시 404를 반환한다.\n"

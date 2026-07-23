@@ -20,10 +20,12 @@ fetch 경로를 뽑는 것으로 끝난다 (verify_frontend, LLM 미사용).
 """
 
 import json
+import os
 
 from ..design_system import design_prompt_block
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
+from .backend_registry import BACKEND_PORTS
 
 _SCHEMA_HINT = (
     "너는 API 명세와 화면설계서를 보고 동작하는 프론트엔드를 작성하는 개발자다. "
@@ -33,7 +35,9 @@ _SCHEMA_HINT = (
     "브라우저로 파일을 바로 열면 동작해야 한다.\n"
     "- API 명세에 있는 엔드포인트만 호출한다. 명세에 없는 경로를 부르지 않는다.\n"
     "- 백엔드 주소는 파일 맨 위에 상수 하나로 둔다: "
-    'const BASE = "http://localhost:8000";  '
+    'const BASE = "http://localhost:포트번호";  '
+    "포트번호는 아래 사용자 메시지의 [백엔드 포트]에 적힌 값을 그대로 쓴다 - "
+    "스택마다 다르므로(예: fastapi 8000, spring 8080) 절대 다른 값을 지어내지 않는다.\n"
     "URL은 항상 백틱 템플릿 리터럴 `${BASE}/경로` 형태로 쓴다. path parameter가 "
     "있으면 `${BASE}/books/${id}`처럼 쓴다. fetch를 감싸는 헬퍼 함수를 만들어 써도 "
     "되지만, URL만은 이 리터럴 형태를 유지한다 - 계약 검사가 소스에서 이 리터럴을 "
@@ -61,9 +65,12 @@ _SCHEMA_HINT = (
 
 def frontend_node(state: PipelineState) -> dict:
     api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
+    backend_target = os.getenv("BACKEND_TARGET", "fastapi").lower()
+    backend_port = BACKEND_PORTS.get(backend_target, 8000)
     user = (
         f"[API 명세 - 이게 계약이다]\n{api_spec_json}\n\n"
         f"[화면설계서 - 레이아웃 참고용]\n{state.get('screen_design', '(없음)')}\n\n"
+        f"[백엔드 포트]\n{backend_port}\n\n"
         f"{design_prompt_block()}"
         "위 API 명세를 호출하는 프론트엔드를 index.html 하나로 작성해줘."
     )

@@ -13,6 +13,12 @@ import json
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
 
+# uvicorn 기본 포트. RUN_INSTRUCTIONS(backend_registry.py)의 실행 명령에 --port가
+# 없으면 이 값으로 뜬다. frontend 생성 노드가 BASE 상수를 맞추는 데도 이 값을 쓴다
+# (backend_registry.BACKEND_PORTS 경유) - 스택마다 포트가 다 달라서(8000/8080/5001/5002)
+# 프론트 프롬프트에 숫자를 직접 박으면 스택 바꿀 때마다 어긋난다.
+PORT = 8000
+
 _SCHEMA_HINT = (
     "너는 API 명세와 데이터 모델을 보고 실제로 동작하는 FastAPI 백엔드를 작성하는 "
     "백엔드 개발자다. 다음 규칙을 반드시 지킨다:\n"
