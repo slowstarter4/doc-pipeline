@@ -9,6 +9,9 @@ generated/
 # schemathesis가 수동 실행 때 남기는 캐시
 .schemathesis/
 
+# LLM 응답 캐시 (같은 프롬프트 재호출 시 토큰 절약. 지우면 다음 실행에 다시 채워짐)
+.cache/
+
 # 에디터
 .vscode/
 .idea/

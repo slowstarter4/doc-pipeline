@@ -50,10 +50,29 @@
   - **버그 1건을 프롬프트 규칙으로 승격:** LLM이 `lastInsertRowid`가 BigInt일까 봐 id·외래키를
     `String()`으로 감싸 응답이 문자열로 나갔다(명세는 number). 실측상 기본값은 이미 JS
     number라 불필요한 변환. "id·외래키는 String으로 감싸지 말고 number 그대로" 규칙 추가.
-- 다음: typescript·spring도 같은 전환. **한 스택씩** 하고 매번 재기동 영속성으로
-  확인한다("진단과 수정 분리" 규칙). typescript는 express와 같은 node:sqlite를 쓰면 되고,
-  api_spec 필드명이 재실행마다 갈리는 기존 LLM 비결정성(서버는 매번 그 스펙과는 일치)만
-  참고. 그 뒤에야 Postgres+도커를 얹는다(sqlite 영속성이 4스택에 서면 Postgres 전환은
+- **typescript도 `node:sqlite`로 전환** (`backend_express_ts.py`). 영속성·업무규칙 3개·
+  `tsc` strict 0에러 전부 통과. express에서 배운 규칙을 미리 넣어 첫 실행에 대부분 맞췄고,
+  두 버그만 프롬프트 규칙으로 승격:
+  - **외래키 number 규칙이 조건부라 무력화됐다(중요).** 기존 규칙은 "명세에 number로
+    정의된 필드"만 number로 내보내라고 했는데, ERD·api_spec 생성 단계가 memberId/bookId
+    같은 식별자 필드를 전부 `"string"`으로 뭉뚱그려 적어서 조건이 항상 거짓 → FK가
+    문자열로 나갔다. "이름이 엔티티명+Id 형태면 **명세 표기와 무관하게** 항상 number"로
+    무조건 규칙으로 바꿨다. **같은 조건부 문구가 express에도 있어 함께 무조건 규칙으로
+    정합을 맞췄다**(express 재검증은 다음에 만질 때 — 캐시 덕에 문서는 재생성 안 함).
+  - node:sqlite의 `.get()/.all()` 반환 타입(`Record<string, SQLOutputValue>`)이 도메인
+    인터페이스와 구조가 안 겹쳐 `as Book[]` 직접 캐스팅이 TS2352로 컴파일 실패 → node
+    특유의 `as unknown as Book[]` 이중 캐스팅 규칙 추가.
+- **LLM 응답 캐시를 넣었다** (`src/llm.py`). backend 노드 하나만 바꿔 파이프라인을 여러 번
+  재실행하는데 매번 문서 단계(requirements~openapi)를 새로 생성하던 게 토큰의 대부분이었다.
+  `call_llm`에 `(모델+system+user+max_tokens)` 해시 키로 파일 캐시(`.cache/llm/`)를 달아,
+  plan_doc이 같으면 문서 프롬프트가 전부 히트하고 프롬프트를 고친 backend 노드만 미스가 나
+  재생성된다. 실측 500배 빠름(3.5s→0.007s), 히트 시 토큰 0. 캐시가 비결정성을 고정해
+  디버깅 재현성도 좋아진다. `LLM_CACHE=0`으로 끈다. **주의: 이 캐시는 fastapi 자기수정
+  루프와 상성이 나쁠 수 있다** — verify 실패 로그를 프롬프트에 실어 재생성할 때 로그가
+  매번 다르면 키가 달라져 정상 미스지만, 로그가 같은데 재생성을 기대하는 경우엔 캐시가
+  같은 답을 돌려줄 수 있다(그럴 땐 `LLM_CACHE=0`).
+- 다음: spring도 같은 전환(sqlite/H2 등 JVM 쪽 방식). **한 스택씩** 확인한다("진단과 수정
+  분리"). 그 뒤에야 Postgres+도커를 얹는다(sqlite 영속성이 4스택에 서면 Postgres 전환은
   DDL 방언+커넥션 문자열만 바뀌는 국소 변경이 된다).
 
 **스택별 실사용 검증 현황 (2026-07-23 기준):**
@@ -62,7 +81,7 @@
 | fastapi | 자동 검증(verify_backend: 스모크+영속성) + 브라우저 | ✅ |
 | spring | 자동 검증은 대상 밖(건너뜀) → 수동 `gradlew bootRun` + 브라우저 | ✅ (버그 3개 발견·수정, 아래) |
 | express | `backend-runtime-verifier` 에이전트로 실제 기동 + CRUD/업무규칙 스모크 + **node:sqlite 영속성**(재기동 후 데이터 유지) | ✅ (id 문자열화 버그 1개 수정) |
-| typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 스모크 (library_plan.md). **DB는 아직 in-memory** | ✅ 기동/CRUD (sqlite 전환은 남음) |
+| typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 스모크 + **node:sqlite 영속성** (library_plan.md) | ✅ (FK 문자열화·TS2352 버그 2개 수정) |
 
 **4개 스택 전부 실사용 검증 완료.** express·typescript는 `.claude/agents/backend-runtime-verifier.md` +
 `.claude/skills/backend-runtime-verification/` 하네스로 자동화해서 spring 때 사람이 손으로 했던

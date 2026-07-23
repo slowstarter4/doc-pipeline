@@ -24,7 +24,46 @@ _SCHEMA_HINT = (
     "계약의 일부다. 규칙 위반으로 요청을 거부할 때는 400과 함께 어떤 규칙에 걸렸는지 "
     "알 수 있는 메시지를 JSON으로 반환한다. rules가 빈 배열이면 추가 제약이 없다는 뜻이다.\n"
     "- ERD에 정의된 필드로 TypeScript interface(또는 type)를 정의하고 사용한다.\n"
-    "- 데이터는 in-memory 배열로 저장한다 (DB 연동 없음, 범위 밖).\n"
+    "- 데이터는 Node 내장 모듈 node:sqlite로 파일 DB(.db)에 저장한다. "
+    "`import { DatabaseSync } from 'node:sqlite';`(CommonJS면 require)로 불러오고 "
+    "`const db = new DatabaseSync('도메인명.db');`로 연다. 아래 [DB 스키마(DDL)]에 "
+    "주어진 CREATE TABLE 문을 앱 시작 시 `db.exec(ddl)`로 그대로 실행해 테이블을 만든다 - "
+    "직접 CREATE TABLE을 새로 짓지 않는다(스택 간 스키마가 갈리는 걸 막으려고 DDL은 "
+    "파이프라인이 결정적으로 생성한다). 외부 DB 서버·ORM·서드파티 sqlite 패키지"
+    "(better-sqlite3, sqlite3 등)를 쓰지 않는다 - node:sqlite는 Node 내장이라 npm 의존성이 "
+    "필요 없고 네이티브 빌드도 없다(파이썬 fastapi가 stdlib sqlite3만 쓰는 것과 같은 이유). "
+    "서버를 껐다 켜도 데이터가 남아있어야 한다(메모리 배열에만 담아두면 안 된다).\n"
+    "- node:sqlite는 실험적 모듈이라 런타임에 `--experimental-sqlite` 플래그가 필요하다. "
+    "tsc로 빌드한 뒤 실행하므로 package.json의 start 스크립트를 "
+    "`node --experimental-sqlite dist/server.js`로, build 스크립트를 `tsc`로 쓴다. 실행 시 "
+    "ExperimentalWarning이 stderr로 뜨지만 정상이다.\n"
+    "- node:sqlite의 타입 선언은 최신 @types/node(22.x 이상)에 포함된다 - package.json에 "
+    "최신 @types/node를 넣는다. 그래도 타입 해석이 안 되면 런타임 동작을 해치지 않는 선에서 "
+    "`as any`로 우회하되, 임의의 서드파티 타입 패키지를 추가하지 않는다.\n"
+    "- DatabaseSync는 동기 API다. async/await나 콜백을 쓰지 않고 "
+    "db.prepare(sql).run(...)/.get(...)/.all(...)로 직접 호출한다. .get()/.all()의 반환 타입은 "
+    "`Record<string, SQLOutputValue>`(또는 그 배열)라 도메인 인터페이스(Book/Member/Loan 등)와 "
+    "구조가 충분히 겹치지 않는다고 tsc가 판단해 `as Book[]` 같은 직접 캐스팅은 "
+    "TS2352(Conversion ... may be a mistake) 컴파일 에러가 난다. 반드시 "
+    "`as unknown as Book[]`처럼 `unknown`을 거쳐 캐스팅한다. 커넥션은 모듈 로드 시 한 번 열어 "
+    "재사용한다(Node는 단일 스레드라 스레드 충돌이 없다).\n"
+    "- id는 DDL의 INTEGER PRIMARY KEY AUTOINCREMENT로 DB가 매기게 하고, 삽입 결과의 "
+    "lastInsertRowid로 새 id를 얻는다. JS 카운터 변수로 세지 않는다(재기동하면 카운터가 "
+    "초기화되어 id가 겹친다).\n"
+    "- id 및 다른 엔티티의 id를 참조하는 필드(예: memberId, bookId - 이름이 어떤 엔티티명 "
+    "+ Id 형태면 그 엔티티의 PK를 참조하는 외래키다)는 항상 number로 응답 JSON에 내보낸다. "
+    "**명세/ERD가 이 필드를 \"string\" 타입으로 적어놨어도 예외가 아니다** - 명세 생성 "
+    "단계가 식별자 필드를 전부 \"string\"으로 뭉뚱그려 적는 경우가 흔한데, 실제로는 "
+    "INTEGER PRIMARY KEY AUTOINCREMENT를 참조하므로 number가 맞다. 요청 body로 받은 "
+    "memberId/bookId도 String()으로 변환해 저장·조회하지 말고 Number(...)로 변환해 sqlite "
+    "바인딩과 응답에 number로 일관되게 쓴다 (DDL의 해당 컬럼도 TEXT가 아니라 INTEGER여야 "
+    "한다 - schema.sql이 TEXT로 줬어도 코드에서 Number 취급이 깨지지 않게 bind/응답 시 "
+    "Number(...)로 강제한다). lastInsertRowid는 기본적으로 이미 number이므로 BigInt 직렬화를 "
+    "피하려 String으로 바꿀 필요가 없다 - 바꾸면 프론트의 숫자 비교·연산이 깨진다. "
+    "Number(...)로 명시 변환은 무방하나 문자열로 내보내지 않는다.\n"
+    "- boolean 필드는 sqlite에 0/1 정수로 저장된다. bind 파라미터로 JS boolean을 직접 못 "
+    "받으므로 삽입 시 true/false를 1/0으로 넣고, 응답으로 내보낼 때 Boolean(value)로 변환해 "
+    "JSON에 true/false로 나가게 한다.\n"
     "- ES modules 또는 CommonJS 중 하나로 일관되게 작성하고, tsconfig.json을 포함한다.\n"
     f"- 서버는 반드시 포트 {PORT}에서 리스닝한다 (app.listen({PORT}, ...)). 3000, 8080 "
     "같은 흔한 기본 포트는 Windows 환경에서 예약되어 있거나 다른 스택과 충돌하는 "
@@ -64,13 +103,25 @@ _SCHEMA_HINT = (
 def backend_express_ts_node(state: PipelineState) -> dict:
     api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
     data_model_json = json.dumps(state["data_model"], ensure_ascii=False, indent=2)
+    ddl = state.get("schema_ddl") or ""
     user = (
         f"[API 명세]\n{api_spec_json}\n\n"
         f"[데이터 모델(ERD)]\n{data_model_json}\n\n"
+        f"[DB 스키마(DDL) - 이 CREATE TABLE 문을 앱 시작 시 그대로 실행한다]\n{ddl}\n\n"
         "위 API 명세와 데이터 모델로 Node.js + Express + TypeScript 백엔드를 작성해줘. "
         "package.json, tsconfig.json도 함께 만들어줘 (express·typescript·@types/express·"
-        "@types/node 의존성 포함, build/start 스크립트 포함)."
+        "@types/cors·최신 @types/node 의존성 포함, build 스크립트는 `tsc`, start 스크립트는 "
+        "`node --experimental-sqlite dist/server.js`)."
     )
+
+    # 재시도 루프: 이전 시도 실패 로그를 프롬프트에 실어 같은 실수를 반복하지 않게 한다.
+    prev = state.get("verify_report")
+    if prev and prev.get("passed") is False:
+        user += (
+            f"\n\n[이전 시도 실패 로그 - 이 문제를 반드시 고쳐서 다시 작성해줘]\n"
+            f"{prev.get('logs', '')}"
+        )
+
     raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
     try:
         result = strip_json(raw)
