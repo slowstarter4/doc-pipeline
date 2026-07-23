@@ -123,8 +123,11 @@ FRONTEND_TARGET=react      # react | vanilla
 - 두 번째 기획문서(엔티티 3개, 관계, enum, 외래키, 업무 규칙 3종)로 검증했다
   (`examples/library_plan.md`). 아직 못 본 건: 파일 업로드, 여러 화면에 걸친
   다단계 흐름, 인증/권한.
-- 자동 실행 검증과 sqlite 규칙은 **FastAPI 전용**이다. 나머지 3개 스택은 생성은
-  되지만 검증을 건너뛴다 (수동 확인 필요).
+- 파이프라인 내장 자동 실행 검증(`verify_backend`)은 **FastAPI 전용**이다. 나머지
+  3개 스택은 `backend-runtime-verifier` 에이전트(`.claude/agents`,`.claude/skills`)로
+  실제 기동·CRUD·업무규칙·영속성을 검증한다 — spring/express/typescript 전부 통과.
+- DB 영속성(파일 DB)은 현재 **fastapi(stdlib sqlite3)·express(node:sqlite 내장)**에
+  적용됐다. typescript·spring은 아직 in-memory (같은 node:sqlite 방식으로 전환 진행 중).
 - 계약 검사는 **경로만** 본다. 경로는 같고 응답 모양만 다른 불일치는 못 잡는다.
 - 프론트 계약 위반이 잡혀도 자동으로 고치지 않는다 (진단만).
 - schemathesis 계약 검사는 파이프라인 밖에서 사람이 수동으로 돌린다.
