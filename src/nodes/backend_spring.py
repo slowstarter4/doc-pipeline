@@ -25,6 +25,13 @@ _SCHEMA_HINT = (
     "계약의 일부다. 규칙 위반으로 요청을 거부할 때는 400과 함께 어떤 규칙에 걸렸는지 "
     "알 수 있는 메시지를 JSON으로 반환한다. rules가 빈 배열이면 추가 제약이 없다는 뜻이다.\n"
     "- ERD에 정의된 필드만 사용한다.\n"
+    "- **DTO/모델의 필드명·getter/setter명은 API 명세에 있는 영문 필드명을 그대로 "
+    "쓴다** (예: title, isbn, memberId, loanDate). 요구사항정의서나 화면설계서의 "
+    "한글 항목명('제목', '대출일' 등)을 필드명이나 @JsonProperty 값으로 옮기지 "
+    "않는다 - 클라이언트는 API 명세의 영문 필드명으로 요청을 보내므로, 한글 필드명을 "
+    "쓰면 역직렬화가 그 자리에서 전부 실패해 엔드포인트가 마비된다. 실제로 이 실수로 "
+    'DTO 필드를 통째로 한글(예: "private boolean 대출중여부")로 짓거나, 영문 필드에 '
+    '엉뚱하게 @JsonProperty("제목") 같은 한글 값을 붙여 API 전체가 깨진 사고가 있었다.\n'
     "- 데이터는 in-memory(예: ArrayList, AtomicLong id 채번)로 저장한다. "
     "JPA, MyBatis, 실제 DB 연동은 사용하지 않는다 (범위 밖).\n"
     "- Spring Boot 3.x + @RestController 기반의 표준 레이어드 구조로 작성한다 "
@@ -55,10 +62,19 @@ _SCHEMA_HINT = (
     "@NotNull을 사용한다.\n"
     "- boolean 필드는 Jackson이 getter의 'is' 접두사를 자동으로 떼고 직렬화한다 "
     "(예: isCompleted 필드의 getter isCompleted() → JSON에서는 completed로 나감). "
-    "ERD/API 명세에 정의된 필드명을 JSON에서 그대로 유지해야 하므로, 이런 필드에는 "
-    "반드시 com.fasterxml.jackson.annotation.JsonProperty를 import해서 "
-    '필드(또는 Lombok을 안 쓴다면 getter) 위에 @JsonProperty("isCompleted")처럼 '
-    "명시적으로 붙인다.\n"
+    "ERD/API 명세에 정의된 필드명을 JSON에서 그대로 유지해야 하므로, **is로 시작하는 "
+    "boolean 필드에 한해서만** com.fasterxml.jackson.annotation.JsonProperty를 "
+    'import해서 필드(또는 getter) 위에 @JsonProperty("isCompleted")처럼 붙인다. '
+    "@JsonProperty의 값은 반드시 API 명세에 있는 필드명 그대로 쓴다(예: isCompleted, "
+    "isOverdue) - 요구사항정의서의 한글 항목명(예: '완료 여부', '연체 여부')을 절대 "
+    "넣지 않는다.\n"
+    "- **is로 시작하지 않는 필드(String, Long, LocalDate 등 대부분)에는 "
+    "@JsonProperty를 붙이지 않는다.** 필드명을 API 명세와 똑같은 camelCase로 "
+    "지으면(title, isbn, memberId 등) Jackson이 자동으로 맞는 JSON 키를 쓰므로 "
+    "애초에 애너테이션이 필요 없다. 실제로 이 규칙을 모든 필드에 확대 적용해서 "
+    '@JsonProperty("제목")처럼 요구사항정의서의 한글 라벨을 넣는 바람에, 클라이언트가 '
+    '보낸 title이 "인식할 수 없는 필드"로 거부되어 API 전체가 마비된 사고가 있었다. '
+    "@JsonProperty는 오직 is-접두사 boolean 하나만을 위한 예외적 장치임을 명심한다.\n"
     '- Jackson은 기본적으로 관대해서 boolean 값 false를 문자열 "false"로, 숫자를 '
     "문자열로 타입 강제변환(coercion)해버릴 수 있다. 이렇게 되면 잘못된 타입이 "
     "조용히 통과해버려 검증이 무력화된다. 이를 막기 위해 TodoApplication의 "
@@ -108,7 +124,10 @@ def backend_spring_node(state: PipelineState) -> dict:
         "위 API 명세와 데이터 모델로 Spring Boot 백엔드를 작성해줘. "
         "패키지 구조에 맞게 여러 파일로 나눠서 만들어줘."
     )
-    raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
+    # Spring은 Controller/Service/Model/DTO를 파일별로 분리하는 구조라 다른
+    # 스택보다 산출물이 훨씬 길다. 엔티티가 여럿인 기획서(도서 대출 관리 등)에서
+    # 8192로는 JSON이 파일을 다 못 쓰고 잘려 파싱 실패가 났다.
+    raw = call_llm(_SCHEMA_HINT, user, max_tokens=16384)
     try:
         result = strip_json(raw)
     except json.JSONDecodeError:

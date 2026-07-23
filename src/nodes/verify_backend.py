@@ -252,6 +252,16 @@ def _run_smoke_test(base_url: str, api_spec: dict) -> tuple[list[str], list[str]
 
 
 def verify_backend_node(state: PipelineState) -> dict:
+    # 파일 쓰기 단계에서 파싱 실패로 verify_report가 이미 채워졌으면 어떤 타깃이든
+    # 그대로 유지한다. 이 체크가 fastapi 분기보다 뒤에 있으면, non-fastapi 타깃은
+    # write_backend가 기록한 실패를 무시하고 무조건 통과로 덮어써버린다 - 실제로
+    # Spring 백엔드가 JSON 파싱 실패(응답 잘림)로 파일을 하나도 못 썼는데
+    # "✅ 자동 검증 통과"가 뜬 사고가 있었다. 그래서 이 체크를 맨 앞에 둔다.
+    if state.get("verify_report") and state["verify_report"].get("logs", "").startswith(
+        "백엔드 코드 JSON 파싱"
+    ):
+        return {}
+
     target = os.getenv("BACKEND_TARGET", "fastapi").lower()
     if target != "fastapi":
         # 다른 스택은 자동 검증 대상 밖 - 통과로 처리하고 넘어간다.
@@ -261,12 +271,6 @@ def verify_backend_node(state: PipelineState) -> dict:
                 "logs": "(자동 검증은 fastapi 전용 - 건너뜀)",
             }
         }
-
-    # 이미 파일 쓰기 단계에서 파싱 실패로 verify_report가 채워졌으면 그대로 유지.
-    if state.get("verify_report") and state["verify_report"].get("logs", "").startswith(
-        "백엔드 코드 JSON 파싱"
-    ):
-        return {}
 
     base_url = f"http://127.0.0.1:{VERIFY_PORT}"
     proc = None
