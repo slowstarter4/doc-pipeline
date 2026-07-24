@@ -163,9 +163,11 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
   → `openapi_spec` → `consistency_check` → `review_gate` → (조건부) fan-out:
   - `backend` → `write_backend` → `verify_backend` → (실패 시 루프백) `backend` | END
   - `frontend` → `write_frontend` → `verify_frontend` → (실패 시 루프백) `frontend` | END
-- **백엔드와 프론트엔드가 나란히(fan-out) 돈다.** 둘은 서로의 산출물을 안 보고
+  - `test_gen` → `write_tests` → END (명세에서 pytest 계약 테스트 생성. 실행은 사람이)
+- **백엔드·프론트엔드·테스트가 나란히(fan-out) 돈다.** 셋 다 서로의 산출물을 안 보고
   `api_spec`만 공유한다 - 그래서 순서를 정할 이유가 없고, 한쪽만 재생성해도
-  다른 쪽이 안 깨진다. 협상하는 멀티에이전트가 아니라 **계약 공유형**이다.
+  다른 쪽이 안 깨진다. 협상하는 멀티에이전트가 아니라 **계약 공유형**이다. test_gen도
+  같은 이유로 코드가 아니라 명세에서 테스트를 만든다(코드 버그를 정답으로 박제 방지).
 - 2026-07-22 기준 실측: `fastapi` + `react` 조합으로 전 구간 통과했다 (백엔드
   재시도 0회, 스모크 + 영속성 통과, 프론트 경로 3개 일치, 디자인 토큰 8색 전부 반영,
   `npm run build` 성공, 브라우저에서 CRUD·CORS·한글 입력·디자인 확인 완료).
@@ -231,9 +233,20 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
   `interrupt()`로 멈추고 사람이 y/n으로 승인/거부 (`main.py`가 `Command(resume=...)`로 재개).
 - 백엔드 구현체는 여전히 `.env`의 `BACKEND_TARGET`으로 레지스트리에서 선택
   (fastapi/spring/express/typescript, 4개 모두 CRUD 실사용 검증 완료).
-- 아직 없음: fastapi 외 스택의 자동 실행 검증, 프론트엔드 노드, 테스트 생성·실행,
-  schemathesis 결과를 파이프라인에 자동으로 피드백하는 루프(지금은 순수 진단 도구로만 씀),
-  재시도 상한 도달 시 사람 에스컬레이션(지금은 로그 출력 + 수동 확인 안내로 끝)
+- **테스트 생성 노드 구현됨** (`test_gen` → `write_tests`, 2026-07-24). 원래 목표 흐름의
+  '테스트 생성·실행' 단계다. api_spec+rules+ERD에서 **명세만 근거로**(생성 코드를 안 봄 -
+  코드 버그를 정답으로 박제 방지) pytest 계약 테스트를 LLM 생성한다. 테스트는 requests로
+  HTTP를 때려 언어 무관 - 한 벌이 4스택 전부를 검증한다(verify_backend 스모크가 스택
+  무관인 것과 같다). BASE_URL env로 대상 서버를 가리키고 스택별 포트를 사람이 맞춘다.
+  review_gate 이후 fan-out의 세 번째 갈래(backend ∥ frontend ∥ test_gen). **스코프는
+  생성만** - 실행은 사람이 `pytest`로 한다(schemathesis·프론트 npm과 같은 판단: 자동
+  실행은 안 붙인다). 실측: library_plan에서 22개 테스트 생성(CRUD·404·400 + 업무규칙
+  전부: 중복대출·5권 상한·중복반납·대출중 삭제 거부), 라이브 express+postgres 상대로
+  22 passed. 생성 데이터는 유효값(ISBN 13자리·enum·uuid 고유화)이고 자기가 만든
+  리소스로만 단언해 누적 데이터에 안 흔들린다.
+- 아직 없음: 테스트 자동 실행(생성만 함 - 실행은 사람이), schemathesis 결과를 파이프라인에
+  자동으로 피드백하는 루프(지금은 순수 진단 도구로만 씀), 재시도 상한 도달 시 사람
+  에스컬레이션(지금은 로그 출력 + 수동 확인 안내로 끝).
 
 ## 아키텍처 규칙
 
