@@ -78,19 +78,17 @@ def call_llm(system: str, user: str, max_tokens: int = 8192) -> str:
 
 
 def strip_json(text: str) -> dict:
-    """```json 펜스가 붙어 나와도, 앞뒤에 잡소리가 붙어 나와도 최대한 안전하게 파싱한다."""
+    """```json 펜스가 붙어 나와도, 앞뒤에 잡소리가 붙어 나와도 최대한 안전하게 파싱한다.
+
+    첫 '{'부터 마지막 '}'까지를 취한다. 펜스를 split("```")로 떼던 예전 방식은 content
+    문자열 안에 ```가 들어있으면(예: 테스트 생성물의 README가 ```bash 코드블록을 담는다)
+    그 안쪽 백틱에 걸려 JSON을 반토막 냈다 - 중괄호 범위 추출은 안쪽 백틱과 무관하다.
+    """
     cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("```")[1]
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
-        cleaned = cleaned.strip()
-    else:
-        # 펜스가 없는데 앞에 잡소리가 붙어 나온 경우, 첫 '{'부터 마지막 '}'까지만 취한다.
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start != -1 and end != -1:
-            cleaned = cleaned[start:end + 1]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1:
+        cleaned = cleaned[start:end + 1]
     return json.loads(cleaned)
 
 
@@ -108,4 +106,8 @@ if __name__ == "__main__":
     assert strip_json('{"a": 1}') == {"a": 1}
     assert strip_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert strip_json('앞잡소리 {"a": 1} 뒷잡소리') == {"a": 1}
+    # content 문자열 안에 ```가 들어있어도(테스트 생성물의 README가 ```bash를 담는다)
+    # 안쪽 백틱에 안 걸리고 파싱된다 (예전 split("```") 방식이 여기서 깨졌다).
+    inner = '```json\n{"c": "run:\\n```bash\\npytest\\n```\\n"}\n```'
+    assert strip_json(inner) == {"c": "run:\n```bash\npytest\n```\n"}
     print("llm self-check 통과")
