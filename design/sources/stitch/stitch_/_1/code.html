@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Member Management - Neighborhood Library Admin</title>
+<script type="text/javascript" nonce="1155e5cd250f4c8683c2f0a71f9" src="//local.adguard.org?ts=1784876524678&amp;type=content-script&amp;dmn=contribution.usercontent.google.com&amp;url=https%3A%2F%2Fcontribution.usercontent.google.com%2Fdownload%3Fc%3DCgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzIyNzk0NjlmYWM3MjRhZWU4NTM4YTQ2YjQ2NDhmNGE4EgsSBxDezsGiwRgYAZIBIwoKcHJvamVjdF9pZBIVQhM4NDA3NjAxMzA1ODYxMTA4OTc1%26filename%3D%26opi%3D89354086&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="1155e5cd250f4c8683c2f0a71f9" src="//local.adguard.org?ts=1784876524678&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                "surface-tint": "#3b6934",
+                "inverse-primary": "#a1d494",
+                "secondary-fixed-dim": "#c7c7c0",
+                "on-secondary-fixed-variant": "#464742",
+                "surface-container-high": "#dfe9fa",
+                "on-error-container": "#93000a",
+                "outline": "#72796e",
+                "surface-container": "#e5eeff",
+                "on-surface": "#121c28",
+                "secondary": "#5e5f5a",
+                "on-tertiary-fixed": "#001a42",
+                "surface-bright": "#f8f9ff",
+                "surface": "#f8f9ff",
+                "on-surface-variant": "#42493e",
+                "on-tertiary-fixed-variant": "#004395",
+                "surface-dim": "#d1dbec",
+                "inverse-on-surface": "#eaf1ff",
+                "surface-container-lowest": "#ffffff",
+                "on-secondary": "#ffffff",
+                "on-primary-container": "#9dd090",
+                "primary-fixed": "#bcf0ae",
+                "inverse-surface": "#27313e",
+                "tertiary-container": "#004ca6",
+                "outline-variant": "#c2c9bb",
+                "on-tertiary": "#ffffff",
+                "on-error": "#ffffff",
+                "on-primary": "#ffffff",
+                "on-background": "#121c28",
+                "surface-variant": "#d9e3f4",
+                "on-secondary-container": "#646560",
+                "error-container": "#ffdad6",
+                "tertiary-fixed-dim": "#adc6ff",
+                "tertiary-fixed": "#d8e2ff",
+                "surface-container-low": "#eef4ff",
+                "error": "#ba1a1a",
+                "primary-fixed-dim": "#a1d494",
+                "background": "#f8f9ff",
+                "on-secondary-fixed": "#1b1c18",
+                "tertiary": "#00367a",
+                "on-primary-fixed-variant": "#23501e",
+                "on-tertiary-container": "#a7c2ff",
+                "secondary-container": "#e3e3dc",
+                "secondary-fixed": "#e3e3dc",
+                "on-primary-fixed": "#002201",
+                "surface-container-highest": "#d9e3f4",
+                "primary": "#154212",
+                "primary-container": "#2d5a27"
+            },
+            "borderRadius": {
+                "DEFAULT": "0.125rem",
+                "lg": "0.25rem",
+                "xl": "0.5rem",
+                "full": "0.75rem"
+            },
+            "spacing": {
+                "stack-sm": "8px",
+                "margin-desktop": "40px",
+                "stack-lg": "32px",
+                "stack-md": "16px",
+                "margin-mobile": "16px",
+                "gutter": "24px",
+                "unit": "4px",
+                "container-max-width": "1440px"
+            },
+            "fontFamily": {
+                "body-md": ["Hanken Grotesk"],
+                "display": ["Hanken Grotesk"],
+                "headline-lg": ["Hanken Grotesk"],
+                "body-sm": ["Hanken Grotesk"],
+                "headline-md": ["Hanken Grotesk"],
+                "label-lg": ["Hanken Grotesk"],
+                "headline-lg-mobile": ["Hanken Grotesk"],
+                "label-md": ["Hanken Grotesk"],
+                "body-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                "display": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                "headline-lg": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                "label-lg": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+                "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Hanken Grotesk', sans-serif;
+            background-color: #FDFCF5; /* Brand Background Cream */
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #D1D5DB;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #72796e;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface">
+<!-- Sidebar Navigation -->
+<aside class="flex flex-col fixed left-0 top-0 h-screen w-64 p-stack-md gap-stack-sm bg-surface-container-low border-r border-outline-variant">
+<div class="px-4 py-6">
+<h1 class="font-headline-md text-headline-md font-bold text-primary">Library Admin</h1>
+<p class="font-label-md text-label-md text-on-surface-variant opacity-70">Local Branch</p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant transition-all rounded-xl font-label-lg text-label-lg group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">menu_book</span>
+                Book Inventory
+            </a>
+<!-- Active Tab: Member Management -->
+<a class="flex items-center gap-3 px-4 py-3 bg-secondary-container text-on-secondary-container font-bold rounded-xl font-label-lg text-label-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">group</span>
+                Member Management
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant transition-all rounded-xl font-label-lg text-label-lg group" href="#">
+<span class="material-symbols-outlined group-hover:scale-110 transition-transform">assignment_return</span>
+                Lending Status
+            </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-outline-variant space-y-2">
+<button class="w-full flex items-center justify-center gap-2 bg-primary-container text-on-primary text-white py-3 px-4 rounded-xl font-label-lg text-label-lg hover:opacity-90 active:scale-95 transition-all shadow-sm">
+<span class="material-symbols-outlined">add</span>
+                Register New Book
+            </button>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant transition-all rounded-xl font-label-lg text-label-lg" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant transition-all rounded-xl font-label-lg text-label-lg" href="#">
+<span class="material-symbols-outlined">help</span>
+                Support
+            </a>
+<div class="flex items-center gap-3 px-4 py-4 mt-2">
+<div class="w-10 h-10 rounded-full overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a friendly female librarian with glasses, wearing a neutral business casual attire, captured in a clean and bright library setting with soft natural light. The aesthetic is professional and trustworthy, aligning with the clean and organized administrative UI of the Neighborhood Library." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4BqqxuOCDrRwEW3jALIn0W7AZEX_NLj1G149AlihALxqp252cBdkD4cA0ymi9zzX8X-4UtnKmT6Xudyp1OsS4fsAlbgPE3etZKfEhlicydK2Zf2BpZbtRk6FGAnkBR8_OmPzAaqOEAUS881qdgd43vWNAMQvk-Osg5NjKC74-Aq84V_YvUU9U5NxcKkHOS-HfEnP9UyQkwm1rRhT5hjONPmcGGQZxtpgnfjfO1MscvwObMkbDmQona_nXvLDzKjEAZsNwDBFOLJY"/>
+</div>
+<div>
+<p class="font-label-lg text-label-lg text-on-surface">Librarian Profile</p>
+<p class="font-label-md text-label-md text-on-surface-variant">Administrator</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 min-h-screen bg-background">
+<!-- Top App Bar Content (Global Search) -->
+<header class="h-16 flex items-center justify-between px-margin-desktop border-b border-outline-variant bg-surface sticky top-0 z-10">
+<div class="flex items-center gap-4 w-1/2">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container-low border border-outline-variant rounded-full text-body-md focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all" placeholder="Search members, books, or records..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="relative text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">schedule</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Page Content -->
+<div class="p-margin-desktop space-y-stack-lg max-w-[1440px] mx-auto">
+<!-- Header Section -->
+<div class="flex items-end justify-between">
+<div>
+<nav class="flex items-center gap-2 text-label-md text-on-surface-variant mb-2">
+<span>Admin</span>
+<span class="material-symbols-outlined text-[12px]">chevron_right</span>
+<span class="text-primary font-bold">회원 목록 관리</span>
+</nav>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">회원 목록 관리</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">전체 도서관 등록 회원의 정보를 관리하고 대출 이력을 조회합니다.</p>
+</div>
+<button class="flex items-center gap-2 bg-primary text-white px-6 py-3 rounded-lg font-label-lg text-label-lg hover:shadow-md active:scale-[0.98] transition-all">
+<span class="material-symbols-outlined">person_add</span>
+                    신규 회원 등록
+                </button>
+</div>
+<!-- Dashboard Summary Widgets (Contextual for Members) -->
+<div class="grid grid-cols-4 gap-gutter">
+<div class="bg-surface-container-lowest p-6 border border-outline-variant rounded-xl">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">총 회원 수</p>
+<div class="flex items-baseline gap-2">
+<span class="font-display text-display text-on-surface">1,248</span>
+<span class="font-label-md text-primary">+12%</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 border border-outline-variant rounded-xl">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">활발한 대출자</p>
+<div class="flex items-baseline gap-2">
+<span class="font-display text-display text-on-surface">432</span>
+<span class="font-label-md text-secondary">34.6%</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 border border-outline-variant rounded-xl">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">연체 회원</p>
+<div class="flex items-baseline gap-2">
+<span class="font-display text-display text-error">24</span>
+<span class="font-label-md text-error-container text-error">-2%</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 border border-outline-variant rounded-xl">
+<p class="font-label-md text-label-md text-on-surface-variant mb-1">신규 가입 (이번 달)</p>
+<div class="flex items-baseline gap-2">
+<span class="font-display text-display text-on-surface">45</span>
+<span class="font-label-md text-primary">Today +3</span>
+</div>
+</div>
+</div>
+<!-- Members Table Card -->
+<div class="bg-white border border-outline-variant rounded-xl shadow-sm overflow-hidden">
+<!-- Table Controls -->
+<div class="px-6 py-4 border-b border-outline-variant bg-surface-container-low flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="flex border border-outline-variant rounded-lg overflow-hidden bg-white">
+<button class="px-4 py-2 text-label-lg border-r border-outline-variant bg-secondary-container font-bold">전체</button>
+<button class="px-4 py-2 text-label-lg border-r border-outline-variant hover:bg-surface-variant transition-colors">활성</button>
+<button class="px-4 py-2 text-label-lg hover:bg-surface-variant transition-colors">정지</button>
+</div>
+<button class="flex items-center gap-2 text-label-lg text-on-surface-variant px-3 py-2 border border-outline-variant rounded-lg hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined text-[20px]">filter_list</span>
+                            필터
+                        </button>
+</div>
+<div class="text-label-md text-on-surface-variant">
+                        총 <span class="font-bold text-on-surface">1,248</span>명 중 <span class="font-bold text-on-surface">5</span>명 표시
+                    </div>
+</div>
+<!-- Actual Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead class="bg-surface-container-low/50">
+<tr>
+<th class="px-6 py-4 font-label-lg text-label-lg text-on-surface-variant border-b border-outline-variant">이름</th>
+<th class="px-6 py-4 font-label-lg text-label-lg text-on-surface-variant border-b border-outline-variant">연락처</th>
+<th class="px-6 py-4 font-label-lg text-label-lg text-on-surface-variant border-b border-outline-variant">가입일</th>
+<th class="px-6 py-4 font-label-lg text-label-lg text-on-surface-variant border-b border-outline-variant">현재 대출 권수</th>
+<th class="px-6 py-4 font-label-lg text-label-lg text-on-surface-variant border-b border-outline-variant text-right">작업</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/30">
+<!-- Row 1: Borrowed Count > 0 (Delete Disabled) -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-label-md">김</div>
+<div>
+<p class="font-label-lg text-label-lg text-on-surface">김민수</p>
+<p class="text-[12px] text-on-surface-variant">ID: 2024-M001</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 font-body-md text-body-md">010-1234-5678</td>
+<td class="px-6 py-5 font-body-md text-body-md">2024-01-15</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-tertiary-fixed text-tertiary font-bold text-[12px] flex items-center justify-center">3</span>
+<span class="font-label-md text-label-md text-on-tertiary-fixed-variant">대출 중</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<div class="flex items-center justify-end gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">edit</span>
+</button>
+<button class="p-2 text-outline-variant cursor-not-allowed opacity-50" disabled="" title="대출 중인 도서가 있는 회원은 삭제할 수 없습니다.">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2: Borrowed Count = 0 (Delete Enabled) -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold text-label-md">박</div>
+<div>
+<p class="font-label-lg text-label-lg text-on-surface">박지윤</p>
+<p class="text-[12px] text-on-surface-variant">ID: 2024-M045</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 font-body-md text-body-md">010-9876-5432</td>
+<td class="px-6 py-5 font-body-md text-body-md">2024-02-10</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-outline-variant text-on-surface-variant font-bold text-[12px] flex items-center justify-center">0</span>
+<span class="font-label-md text-label-md text-on-surface-variant opacity-60">반납 완료</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<div class="flex items-center justify-end gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">edit</span>
+</button>
+<button class="p-2 text-error hover:bg-error-container rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3: Borrowed Count > 0 (Delete Disabled) -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-label-md">이</div>
+<div>
+<p class="font-label-lg text-label-lg text-on-surface">이하준</p>
+<p class="text-[12px] text-on-surface-variant">ID: 2023-M892</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 font-body-md text-body-md">010-5555-1212</td>
+<td class="px-6 py-5 font-body-md text-body-md">2023-11-30</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-tertiary-fixed text-tertiary font-bold text-[12px] flex items-center justify-center">1</span>
+<span class="font-label-md text-label-md text-on-tertiary-fixed-variant">대출 중</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<div class="flex items-center justify-end gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">edit</span>
+</button>
+<button class="p-2 text-outline-variant cursor-not-allowed opacity-50" disabled="">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 4: Borrowed Count = 0 (Delete Enabled) -->
+<tr class="hover:bg-surface-container-lowest transition-colors group">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary/10 flex items-center justify-center text-secondary font-bold text-label-md">최</div>
+<div>
+<p class="font-label-lg text-label-lg text-on-surface">최승현</p>
+<p class="text-[12px] text-on-surface-variant">ID: 2024-M012</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 font-body-md text-body-md">010-7777-8888</td>
+<td class="px-6 py-5 font-body-md text-body-md">2024-01-05</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-outline-variant text-on-surface-variant font-bold text-[12px] flex items-center justify-center">0</span>
+<span class="font-label-md text-label-md text-on-surface-variant opacity-60">미대출</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<div class="flex items-center justify-end gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">edit</span>
+</button>
+<button class="p-2 text-error hover:bg-error-container rounded-full transition-all">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 5: Overdue Member (Delete Disabled) -->
+<tr class="bg-error-container/10 hover:bg-error-container/20 transition-colors group">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-error/10 flex items-center justify-center text-error font-bold text-label-md">정</div>
+<div>
+<p class="font-label-lg text-label-lg text-error font-bold">정수아</p>
+<p class="text-[12px] text-on-surface-variant">ID: 2023-M554</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 font-body-md text-body-md">010-2233-4455</td>
+<td class="px-6 py-5 font-body-md text-body-md">2023-08-22</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<span class="w-6 h-6 rounded-full bg-error text-white font-bold text-[12px] flex items-center justify-center">2</span>
+<span class="font-label-md text-label-md text-error font-bold">연체 중</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<div class="flex items-center justify-end gap-2">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined">edit</span>
+</button>
+<button class="p-2 text-outline-variant cursor-not-allowed opacity-50" disabled="">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination -->
+<div class="px-6 py-4 bg-surface-container-low border-t border-outline-variant flex items-center justify-between">
+<div class="text-label-md text-on-surface-variant">
+                        Page <span class="font-bold text-on-surface">1</span> of 25
+                    </div>
+<div class="flex items-center gap-2">
+<button class="p-2 rounded-lg border border-outline-variant text-outline-variant cursor-not-allowed" disabled="">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded-lg bg-primary text-white font-bold text-label-md">1</button>
+<button class="w-8 h-8 rounded-lg hover:bg-surface-variant transition-colors text-label-md">2</button>
+<button class="w-8 h-8 rounded-lg hover:bg-surface-variant transition-colors text-label-md">3</button>
+<span class="text-on-surface-variant px-1">...</span>
+<button class="w-8 h-8 rounded-lg hover:bg-surface-variant transition-colors text-label-md">25</button>
+<button class="p-2 rounded-lg border border-outline-variant hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Detailed View Panel Placeholder (Bento Style) -->
+<div class="grid grid-cols-12 gap-gutter">
+<div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-6">
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">최근 가입 회원 추이</h3>
+<div class="h-48 w-full relative flex items-end justify-between px-2 pt-8">
+<!-- Simplified Bar Chart Visual -->
+<div class="w-8 bg-primary-container/20 rounded-t-sm h-1/4"></div>
+<div class="w-8 bg-primary-container/20 rounded-t-sm h-2/5"></div>
+<div class="w-8 bg-primary-container/40 rounded-t-sm h-3/5"></div>
+<div class="w-8 bg-primary-container/40 rounded-t-sm h-2/3"></div>
+<div class="w-8 bg-primary-container/60 rounded-t-sm h-4/5"></div>
+<div class="w-8 bg-primary rounded-t-sm h-[95%]"></div>
+<div class="w-8 bg-primary-container/40 rounded-t-sm h-1/2"></div>
+<div class="w-8 bg-primary-container/20 rounded-t-sm h-1/3"></div>
+<div class="w-8 bg-primary-container/30 rounded-t-sm h-1/2"></div>
+<div class="w-8 bg-primary-container/50 rounded-t-sm h-3/4"></div>
+</div>
+<div class="flex justify-between mt-4 text-label-md text-on-surface-variant border-t border-outline-variant pt-2">
+<span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span>
+</div>
+</div>
+<div class="col-span-4 bg-primary-container text-white rounded-xl p-6 relative overflow-hidden flex flex-col justify-between">
+<div class="relative z-10">
+<h3 class="font-headline-md text-headline-md mb-2">프리미엄 서비스 안내</h3>
+<p class="font-body-sm text-body-sm opacity-80">다독 회원을 위한 특별 리워드 프로그램과 전자 도서관 연동 서비스를 확인하세요.</p>
+</div>
+<button class="relative z-10 w-full bg-white text-primary font-bold py-3 rounded-lg mt-4 hover:bg-opacity-90 transition-all">
+                        자세히 보기
+                    </button>
+<!-- Abstract Background Shape -->
+<div class="absolute -bottom-12 -right-12 w-48 h-48 bg-white/10 rounded-full blur-3xl"></div>
+</div>
+</div>
+</div>
+</main>
+<script>
+        // Micro-interactions and data-alt logging (if needed for debugging)
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                if(!this.disabled) {
+                    console.log('Action performed:', this.innerText || this.querySelector('.material-symbols-outlined').innerText);
+                }
+            });
+        });
+    </script>
+</body></html>

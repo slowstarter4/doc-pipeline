@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ko"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Neighborhood Library Admin - Lending Status</title>
+<script type="text/javascript" nonce="1155e5cd250f4c8683c2f0a71f9" src="//local.adguard.org?ts=1784876524678&amp;type=content-script&amp;dmn=contribution.usercontent.google.com&amp;url=https%3A%2F%2Fcontribution.usercontent.google.com%2Fdownload%3Fc%3DCgthaWRhX2NvZGVmeBJ7Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpaCiVodG1sXzIxZTdlMWMwNTY2MzRlODI5OTk2OWZiZjY3MjhiNTIxEgsSBxDezsGiwRgYAZIBIwoKcHJvamVjdF9pZBIVQhM4NDA3NjAxMzA1ODYxMTA4OTc1%26filename%3D%26opi%3D89354086&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=1&amp;rji=1&amp;sbe=1"></script><script type="text/javascript" nonce="1155e5cd250f4c8683c2f0a71f9" src="//local.adguard.org?ts=1784876524678&amp;name=AdGuard%20Extra&amp;type=user-script"></script><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#3b6934",
+                    "inverse-primary": "#a1d494",
+                    "secondary-fixed-dim": "#c7c7c0",
+                    "on-secondary-fixed-variant": "#464742",
+                    "surface-container-high": "#dfe9fa",
+                    "on-error-container": "#93000a",
+                    "outline": "#72796e",
+                    "surface-container": "#e5eeff",
+                    "on-surface": "#121c28",
+                    "secondary": "#5e5f5a",
+                    "on-tertiary-fixed": "#001a42",
+                    "surface-bright": "#f8f9ff",
+                    "surface": "#f8f9ff",
+                    "on-surface-variant": "#42493e",
+                    "on-tertiary-fixed-variant": "#004395",
+                    "surface-dim": "#d1dbec",
+                    "inverse-on-surface": "#eaf1ff",
+                    "surface-container-lowest": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "on-primary-container": "#9dd090",
+                    "primary-fixed": "#bcf0ae",
+                    "inverse-surface": "#27313e",
+                    "tertiary-container": "#004ca6",
+                    "outline-variant": "#c2c9bb",
+                    "on-tertiary": "#ffffff",
+                    "on-error": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "on-background": "#121c28",
+                    "surface-variant": "#d9e3f4",
+                    "on-secondary-container": "#646560",
+                    "error-container": "#ffdad6",
+                    "tertiary-fixed-dim": "#adc6ff",
+                    "tertiary-fixed": "#d8e2ff",
+                    "surface-container-low": "#eef4ff",
+                    "error": "#ba1a1a",
+                    "primary-fixed-dim": "#a1d494",
+                    "background": "#f8f9ff",
+                    "on-secondary-fixed": "#1b1c18",
+                    "tertiary": "#00367a",
+                    "on-primary-fixed-variant": "#23501e",
+                    "on-tertiary-container": "#a7c2ff",
+                    "secondary-container": "#e3e3dc",
+                    "secondary-fixed": "#e3e3dc",
+                    "on-primary-fixed": "#002201",
+                    "surface-container-highest": "#d9e3f4",
+                    "primary": "#154212",
+                    "primary-container": "#2d5a27"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "stack-sm": "8px",
+                    "margin-desktop": "40px",
+                    "stack-lg": "32px",
+                    "stack-md": "16px",
+                    "margin-mobile": "16px",
+                    "gutter": "24px",
+                    "unit": "4px",
+                    "container-max-width": "1440px"
+            },
+            "fontFamily": {
+                    "body-md": ["Hanken Grotesk"],
+                    "display": ["Hanken Grotesk"],
+                    "headline-lg": ["Hanken Grotesk"],
+                    "body-sm": ["Hanken Grotesk"],
+                    "headline-md": ["Hanken Grotesk"],
+                    "label-lg": ["Hanken Grotesk"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "label-md": ["Hanken Grotesk"],
+                    "body-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "display": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-lg": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "label-lg": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "label-md": ["12px", {"lineHeight": "16px", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Hanken Grotesk', sans-serif;
+            background-color: #FDFCF5; /* Brand Background Cream */
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .sidebar-active {
+            scale: 0.98;
+            transition: transform 0.1s ease;
+        }
+    </style>
+</head>
+<body class="text-on-surface">
+<div class="flex min-h-screen">
+<!-- SideNavBar -->
+<aside class="flex flex-col fixed left-0 top-0 h-screen w-64 p-stack-md gap-stack-sm bg-surface-container-low dark:bg-surface-container-high border-r border-outline-variant dark:border-outline z-50">
+<div class="flex items-center gap-3 px-2 py-4">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_balance</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed-dim">Library Admin</h1>
+<p class="font-label-md text-label-md text-on-surface-variant opacity-70">Local Branch</p>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-1 mt-4">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-variant dark:hover:bg-surface-container-highest rounded-xl font-label-lg text-label-lg transition-all" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span>Book Inventory</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-secondary-fixed-dim hover:bg-surface-variant dark:hover:bg-surface-container-highest rounded-xl font-label-lg text-label-lg transition-all" href="#">
+<span class="material-symbols-outlined">group</span>
+<span>Member Management</span>
+</a>
+<!-- Active Navigation: Lending Status -->
+<a class="flex items-center gap-3 px-4 py-3 bg-secondary-container dark:bg-primary-container text-on-secondary-container dark:text-on-primary-container font-bold rounded-xl font-label-lg text-label-lg" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">assignment_return</span>
+<span>Lending Status</span>
+</a>
+</div>
+<div class="mt-auto pt-4 border-t border-outline-variant flex flex-col gap-1">
+<button class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant rounded-xl font-label-lg text-label-lg transition-all">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</button>
+<button class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-variant rounded-xl font-label-lg text-label-lg transition-all">
+<span class="material-symbols-outlined">help</span>
+<span>Support</span>
+</button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-64 flex-1 flex flex-col">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center w-full px-margin-desktop h-16 bg-surface dark:bg-surface-dim border-b border-outline-variant dark:border-outline sticky top-0 z-40">
+<div class="flex items-center gap-gutter flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-body-md focus:ring-2 focus:ring-primary" placeholder="통합 검색..." type="text"/>
+</div>
+<nav class="hidden lg:flex gap-6 ml-8">
+<a class="text-on-surface-variant font-label-lg text-label-lg hover:text-primary transition-colors" href="#">Inventory</a>
+<a class="text-on-surface-variant font-label-lg text-label-lg hover:text-primary transition-colors" href="#">Members</a>
+<a class="text-primary border-b-2 border-primary pb-1 font-label-lg text-label-lg" href="#">Lending</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined">schedule</span>
+</button>
+<button class="p-2 rounded-full hover:bg-surface-variant transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Page Content -->
+<div class="p-margin-desktop flex flex-col gap-stack-lg max-w-container-max-width mx-auto w-full">
+<!-- Page Header -->
+<div class="flex justify-between items-end">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">대출 및 반납 현황</h2>
+<p class="text-on-surface-variant font-body-md mt-2">전체 도서의 대출 상태를 실시간으로 관리하고 연체 현황을 모니터링합니다.</p>
+</div>
+<button class="bg-primary hover:opacity-90 text-white px-6 py-2.5 rounded-xl font-label-lg flex items-center gap-2 shadow-sm transition-all active:scale-95">
+<span class="material-symbols-outlined">add</span>
+<span>대출 처리</span>
+</button>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Section 1: New Lending Form -->
+<section class="col-span-12 lg:col-span-4 bg-white border border-outline-variant p-6 rounded-xl flex flex-col gap-stack-md">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">lte_mobiledata</span>
+<h3 class="font-headline-md text-headline-md">신규 대출 처리</h3>
+</div>
+<div class="space-y-4">
+<div>
+<label class="block text-label-md text-on-surface-variant mb-1 ml-1">회원 선택</label>
+<div class="relative">
+<input class="w-full border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary" placeholder="회원 이름 또는 번호 검색" type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+</div>
+</div>
+<div>
+<label class="block text-label-md text-on-surface-variant mb-1 ml-1">도서 선택</label>
+<div class="relative">
+<input class="w-full border-outline-variant rounded-lg p-3 text-body-md focus:ring-primary focus:border-primary" placeholder="도서명 또는 ISBN 검색" type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-outline">auto_stories</span>
+</div>
+</div>
+</div>
+<!-- Lending Constraints -->
+<div class="bg-surface-container-low p-4 rounded-lg mt-2">
+<h4 class="text-label-lg font-bold text-primary mb-2 flex items-center gap-1">
+<span class="material-symbols-outlined text-[18px]">info</span> 대출 제한 안내
+                            </h4>
+<ul class="text-body-sm text-on-surface-variant space-y-1">
+<li class="flex items-start gap-1">
+<span class="material-symbols-outlined text-[14px] mt-0.5 text-primary">check_circle</span>
+<span>회원당 최대 대출 가능 도서: 5권</span>
+</li>
+<li class="flex items-start gap-1">
+<span class="material-symbols-outlined text-[14px] mt-0.5 text-error">cancel</span>
+<span>연체 중인 회원은 대출 불가</span>
+</li>
+<li class="flex items-start gap-1">
+<span class="material-symbols-outlined text-[14px] mt-0.5 text-error">cancel</span>
+<span>이미 대출 중인 도서는 처리 불가</span>
+</li>
+</ul>
+</div>
+<button class="w-full bg-primary text-white py-3 rounded-lg font-bold hover:bg-opacity-90 transition-all mt-2 active:scale-95">
+                            대출 처리 완료
+                        </button>
+</section>
+<!-- Section 2: Lending Records Table -->
+<section class="col-span-12 lg:col-span-8 bg-white border border-outline-variant rounded-xl overflow-hidden flex flex-col">
+<!-- Table Filter Header -->
+<div class="p-6 border-b border-outline-variant flex flex-col md:flex-row md:items-center justify-between gap-4">
+<h3 class="font-headline-md text-headline-md">대출 기록 목록</h3>
+<div class="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg self-start">
+<button class="px-4 py-1.5 bg-white text-primary font-label-lg rounded-md shadow-sm">전체</button>
+<button class="px-4 py-1.5 text-on-surface-variant font-label-lg hover:text-primary transition-colors">대출중</button>
+<button class="px-4 py-1.5 text-on-surface-variant font-label-lg hover:text-primary transition-colors">반납완료</button>
+</div>
+</div>
+<!-- Desktop Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low">
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant">도서 제목</th>
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant">대출 회원</th>
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant text-center">대출일</th>
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant text-center">반납예정일</th>
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant text-center">상태</th>
+<th class="px-6 py-3 text-label-md font-bold text-on-surface-variant border-b border-outline-variant text-center">작업</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant">
+<!-- Record 1: Overdue -->
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="px-6 py-4">
+<div class="font-label-lg text-on-surface">모순</div>
+<div class="text-label-md text-outline">양귀자 | ISBN 97889...</div>
+</td>
+<td class="px-6 py-4">
+<div class="font-label-lg text-on-surface">김철수</div>
+<div class="text-label-md text-outline">M-10293</div>
+</td>
+<td class="px-6 py-4 text-center font-body-sm">2023.10.15</td>
+<td class="px-6 py-4 text-center">
+<span class="font-body-sm text-error font-bold">2023.10.22</span>
+</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-error-container text-on-error-container gap-1 uppercase">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+                                                연체중
+                                            </span>
+</td>
+<td class="px-6 py-4 text-center">
+<button class="text-primary hover:bg-primary-container hover:text-white border border-primary px-3 py-1 rounded-lg text-label-md transition-all">반납 처리</button>
+</td>
+</tr>
+<!-- Record 2: Borrowing -->
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="px-6 py-4 text-on-surface font-label-lg">쇼펜하우어 소품문</td>
+<td class="px-6 py-4 text-on-surface font-label-lg">이영희</td>
+<td class="px-6 py-4 text-center font-body-sm">2023.10.24</td>
+<td class="px-6 py-4 text-center font-body-sm text-on-surface-variant">2023.10.31</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-surface-container-high text-tertiary">
+                                                대출중
+                                            </span>
+</td>
+<td class="px-6 py-4 text-center">
+<button class="text-primary hover:bg-primary-container hover:text-white border border-primary px-3 py-1 rounded-lg text-label-md transition-all">반납 처리</button>
+</td>
+</tr>
+<!-- Record 3: Returned -->
+<tr class="hover:bg-surface-bright transition-colors opacity-70">
+<td class="px-6 py-4 text-on-surface font-label-lg">불편한 편의점</td>
+<td class="px-6 py-4 text-on-surface font-label-lg">박지민</td>
+<td class="px-6 py-4 text-center font-body-sm">2023.10.10</td>
+<td class="px-6 py-4 text-center font-body-sm text-on-surface-variant">2023.10.17</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-secondary-container text-on-secondary-container">
+                                                반납완료
+                                            </span>
+</td>
+<td class="px-6 py-4 text-center">
+<span class="text-outline text-label-md">완료됨</span>
+</td>
+</tr>
+<!-- Record 4: Borrowing -->
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="px-6 py-4 text-on-surface font-label-lg">도시와 그 그늘</td>
+<td class="px-6 py-4 text-on-surface font-label-lg">최유진</td>
+<td class="px-6 py-4 text-center font-body-sm">2023.10.25</td>
+<td class="px-6 py-4 text-center font-body-sm text-on-surface-variant">2023.11.01</td>
+<td class="px-6 py-4 text-center">
+<span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-surface-container-high text-tertiary">
+                                                대출중
+                                            </span>
+</td>
+<td class="px-6 py-4 text-center">
+<button class="text-primary hover:bg-primary-container hover:text-white border border-primary px-3 py-1 rounded-lg text-label-md transition-all">반납 처리</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination Footer -->
+<div class="mt-auto p-6 border-t border-outline-variant flex justify-between items-center">
+<span class="text-label-md text-on-surface-variant">총 1,248건 중 1-10건 표시</span>
+<div class="flex gap-2">
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded-md hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center bg-primary text-white rounded-md font-label-md">1</button>
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded-md hover:bg-surface-container-low font-label-md">2</button>
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded-md hover:bg-surface-container-low font-label-md">3</button>
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded-md hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Extra Insight Cards -->
+<div class="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-gutter mt-2">
+<div class="bg-primary text-white p-6 rounded-xl shadow-md flex items-center justify-between">
+<div>
+<p class="text-label-lg opacity-80 mb-1">현재 대출 중인 도서</p>
+<h4 class="text-display font-display">241</h4>
+</div>
+<span class="material-symbols-outlined text-[48px] opacity-30">book</span>
+</div>
+<div class="bg-error text-white p-6 rounded-xl shadow-md flex items-center justify-between">
+<div>
+<p class="text-label-lg opacity-80 mb-1">연체 중인 도서</p>
+<h4 class="text-display font-display">12</h4>
+</div>
+<span class="material-symbols-outlined text-[48px] opacity-30">priority_high</span>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex items-center justify-between">
+<div>
+<p class="text-label-lg text-on-surface-variant mb-1">오늘 반납 예정</p>
+<h4 class="text-display font-display text-primary">15</h4>
+</div>
+<span class="material-symbols-outlined text-[48px] text-primary opacity-20">event_available</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Simple Interactivity -->
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Interactive table rows and buttons
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(btn => {
+                btn.addEventListener('mousedown', () => btn.classList.add('scale-95'));
+                btn.addEventListener('mouseup', () => btn.classList.remove('scale-95'));
+                btn.addEventListener('mouseleave', () => btn.classList.remove('scale-95'));
+            });
+
+            // Status Badge Coloring logic (represented here visually in HTML)
+        });
+    </script>
+</body></html>
