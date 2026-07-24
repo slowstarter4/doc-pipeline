@@ -12,9 +12,17 @@ Spring은 원래 여러 클래스 파일로 나뉘는 구조라, files 리스트
 """
 
 import json
+import os
 
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
+
+# DATABASE_URL 규약은 docker-compose.yml과 한 쌍이다 (postgres:16, doc/doc/doc,
+# 호스트 포트 55432). spring은 JDBC URL 형태로 쓴다.
+_PG_HOST = "localhost:55432"
+_PG_DB = "doc"
+_PG_USER = "doc"
+_PG_PW = "doc"
 
 # Spring Boot 내장 톰캣의 기본 포트와 같은 값이지만, 기본값에 기대지 않고
 # application.properties에 명시적으로 적게 한다 (아래 프롬프트 참고). frontend
@@ -23,7 +31,8 @@ from ..state import PipelineState
 # 직접 박으면 스택 바꿀 때마다 어긋난다.
 PORT = 8080
 
-_SCHEMA_HINT = (
+# 인트로~한글필드명 경고까지는 DB와 무관해 공유한다.
+_INTRO = (
     "너는 API 명세와 데이터 모델을 보고 실제로 동작하는 Java Spring Boot 백엔드를 "
     "작성하는 백엔드 개발자다. 다음 규칙을 반드시 지킨다:\n"
     "- API 명세에 정의된 엔드포인트만 구현한다. 명세에 없는 엔드포인트를 추가하지 않는다.\n"
@@ -42,29 +51,69 @@ _SCHEMA_HINT = (
     "쓰면 역직렬화가 그 자리에서 전부 실패해 엔드포인트가 마비된다. 실제로 이 실수로 "
     'DTO 필드를 통째로 한글(예: "private boolean 대출중여부")로 짓거나, 영문 필드에 '
     '엉뚱하게 @JsonProperty("제목") 같은 한글 값을 붙여 API 전체가 깨진 사고가 있었다.\n'
+)
+
+# 영속성 슬롯(드라이버 소개 + datasource + id 채번 + gradle 드라이버 의존성)만 DB_TARGET로
+# 갈린다. schema.sql 초기화·FK Long·date/boolean·나머지 전부는 방언 무관해 공유한다
+# (INTEGER/TEXT 스키마를 두 방언이 공유하므로 date TEXT·boolean 0/1 코드가 그대로다).
+_SQLITE_DB = (
     "- 데이터는 sqlite 파일 DB에 저장한다. org.xerial:sqlite-jdbc 드라이버와 Spring의 "
     "JdbcTemplate(spring-boot-starter-jdbc)을 쓴다. JPA·MyBatis·Hibernate는 쓰지 않는다 "
     "(무거운 ORM 대신 얇은 JDBC). sqlite-jdbc는 JAR에 네이티브 라이브러리가 번들되어 별도 "
     "빌드가 필요 없다. 서버를 껐다 켜도 데이터가 남아있어야 한다(메모리 리스트에만 담아두면 "
     "안 된다).\n"
-    "- 아래 [DB 스키마(DDL)]에 주어진 CREATE TABLE 문을 앱 시작 시 그대로 실행해 테이블을 "
-    "만든다 - 직접 CREATE TABLE을 새로 짓지 않는다(스택 간 스키마가 갈리는 걸 막으려고 DDL은 "
-    "파이프라인이 결정적으로 생성한다). 이 DDL을 src/main/resources/schema.sql로 저장하고, "
-    "application.properties에 spring.sql.init.mode=always를 두면 Spring Boot가 시작 시 "
-    "자동 실행한다(CREATE TABLE IF NOT EXISTS라 재기동에도 안전).\n"
     "- application.properties에 spring.datasource.url=jdbc:sqlite:도메인명.db(도메인에 맞는 "
     "파일명, 확장자 .db)와 spring.datasource.driver-class-name=org.sqlite.JDBC를 둔다.\n"
     "- id는 DDL의 INTEGER PRIMARY KEY AUTOINCREMENT로 DB가 매기게 하고, 삽입 시 "
     "GeneratedKeyHolder로 생성된 id를 받는다. AtomicLong 등 자바 카운터로 채번하지 않는다 "
     "(재기동하면 초기화되어 id가 겹친다).\n"
+    "- build.gradle의 dependencies에 반드시 org.springframework.boot:spring-boot-starter-jdbc와 "
+    "org.xerial:sqlite-jdbc:3.46.1.3(sqlite JDBC 드라이버)을 추가한다. sqlite-jdbc는 버전을 "
+    "명시해야 한다(스타터가 버전을 관리해주지 않는 서드파티라, 버전을 빼면 해석에 실패한다).\n"
+)
+_POSTGRES_DB = (
+    "- 데이터는 Postgres에 저장한다. org.postgresql:postgresql 드라이버와 Spring의 "
+    "JdbcTemplate(spring-boot-starter-jdbc)을 쓴다. JPA·MyBatis·Hibernate는 쓰지 않는다 "
+    "(무거운 ORM 대신 얇은 JDBC). 서버를 껐다 켜도 데이터가 남아있어야 한다(메모리 리스트에만 "
+    "담아두면 안 된다).\n"
+    f"- application.properties에 spring.datasource.url=jdbc:postgresql://{_PG_HOST}/{_PG_DB}, "
+    f"spring.datasource.username={_PG_USER}, spring.datasource.password={_PG_PW}, "
+    "spring.datasource.driver-class-name=org.postgresql.Driver를 둔다(호스트 포트 55432·자격증명은 "
+    "로컬 docker-compose와 맞춘 고정값). sqlite와 달리 도메인별 파일 DB가 아니라 단일 postgres DB에 "
+    "붙는다.\n"
+    "- id는 DDL의 SERIAL PRIMARY KEY로 DB가 매기게 하고, 삽입 시 GeneratedKeyHolder로 생성된 "
+    "id를 받는다. **단 postgres에서는 PreparedStatement를 만들 때 생성키 컬럼을 반드시 "
+    "명시해야 한다** - `connection.prepareStatement(sql, new String[]{\"id\"})`처럼 id 컬럼명을 "
+    "넘긴다. `Statement.RETURN_GENERATED_KEYS`만 쓰면 postgres JDBC 드라이버가 RETURNING *로 "
+    "전체 행을 돌려줘 keyHolder.getKey()가 'single value가 아니다'로 예외가 난다(sqlite에선 안 "
+    "나던 함정). AtomicLong 등 자바 카운터로 채번하지 않는다.\n"
+    "- build.gradle의 dependencies에 반드시 org.springframework.boot:spring-boot-starter-jdbc와 "
+    "org.postgresql:postgresql(postgres JDBC 드라이버)을 추가한다. postgresql 드라이버는 Spring "
+    "Boot 의존성 관리가 버전을 잡아주므로 버전을 명시하지 않는다(sqlite-jdbc와 반대).\n"
+)
+
+# schema.sql 초기화는 두 방언 공통(DDL을 결정적으로 받아 그대로 실행).
+_SCHEMA_INIT = (
+    "- 아래 [DB 스키마(DDL)]에 주어진 CREATE TABLE 문을 앱 시작 시 그대로 실행해 테이블을 "
+    "만든다 - 직접 CREATE TABLE을 새로 짓지 않는다(스택 간 스키마가 갈리는 걸 막으려고 DDL은 "
+    "파이프라인이 결정적으로 생성한다). 이 DDL을 src/main/resources/schema.sql로 저장하고, "
+    "application.properties에 spring.sql.init.mode=always를 두면 Spring Boot가 시작 시 "
+    "자동 실행한다(CREATE TABLE IF NOT EXISTS라 재기동에도 안전).\n"
+)
+
+# FK Long·date/boolean은 방언 무관(INTEGER/TEXT 스키마 공유).
+_FK_DATE_BOOL = (
     "- id 및 외래키(memberId, bookId 등 이름이 엔티티명+Id 형태)는 Long 타입으로 다루고 "
     "JSON에도 숫자로 내보낸다. **명세/ERD가 이 필드를 \"string\"으로 적어놨어도 예외가 "
     "아니다** - 명세 생성 단계가 식별자 필드를 전부 \"string\"으로 뭉뚱그려 적는 경우가 흔한데, "
-    "실제로는 INTEGER PRIMARY KEY를 참조하므로 Long(숫자)이 맞다.\n"
-    "- sqlite는 date 전용 타입이 없어 date 값을 TEXT(ISO 'YYYY-MM-DD' 문자열)로 저장한다. "
+    "실제로는 자동증가 정수 PK를 참조하므로 Long(숫자)이 맞다.\n"
+    "- date 컬럼은 TEXT라 date 값을 ISO 'YYYY-MM-DD' 문자열로 저장한다. "
     "LocalDate는 저장 시 toString()으로 문자열화하고 읽을 때 LocalDate.parse(...)로 되돌린다. "
     "boolean은 0/1 정수로 저장하고 읽을 때 (getInt(...) != 0)으로 되돌린다(응답 JSON에는 "
     "true/false로 나가야 한다).\n"
+)
+
+_COMMON_RULES = (
     "- Spring Boot 3.x + @RestController 기반의 표준 레이어드 구조로 작성한다 "
     "(Controller / Service / Model(DTO+Entity) / Application 진입점을 각각 별도 파일로 분리).\n"
     "- 모델/DTO 클래스의 필드는 반드시 private로 캡슐화하고, public getter/setter를 "
@@ -72,9 +121,6 @@ _SCHEMA_HINT = (
     "- build.gradle의 플러그인 버전은 반드시 다음으로 고정한다 (최신 Gradle과의 "
     "호환성이 검증된 조합): org.springframework.boot version '3.3.4', "
     "io.spring.dependency-management version '1.1.6'. 다른 버전을 임의로 쓰지 않는다.\n"
-    "- build.gradle의 dependencies에 반드시 org.springframework.boot:spring-boot-starter-jdbc와 "
-    "org.xerial:sqlite-jdbc:3.46.1.3(sqlite JDBC 드라이버)을 추가한다. sqlite-jdbc는 버전을 "
-    "명시해야 한다(스타터가 버전을 관리해주지 않는 서드파티라, 버전을 빼면 해석에 실패한다).\n"
     "- gradle wrapper 파일(gradlew, gradlew.bat, gradle/wrapper/gradle-wrapper.jar·"
     ".properties)은 만들지 않는다 - 파이프라인이 검증된 wrapper를 넣어준다(특히 "
     "gradle-wrapper.jar는 바이너리라 텍스트로 만들면 깨진다). build.gradle, settings.gradle, "
@@ -161,6 +207,16 @@ _SCHEMA_HINT = (
 )
 
 
+def _dialect() -> str:
+    """DB_TARGET env로 DB 방언 선택 (schema_ddl과 같은 축). 기본 sqlite."""
+    return os.getenv("DB_TARGET", "sqlite").lower()
+
+
+def _build_hint(dialect: str) -> str:
+    db_block = _POSTGRES_DB if dialect == "postgres" else _SQLITE_DB
+    return _INTRO + db_block + _SCHEMA_INIT + _FK_DATE_BOOL + _COMMON_RULES
+
+
 def backend_spring_node(state: PipelineState) -> dict:
     api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
     data_model_json = json.dumps(state["data_model"], ensure_ascii=False, indent=2)
@@ -184,7 +240,7 @@ def backend_spring_node(state: PipelineState) -> dict:
     # Spring은 Controller/Service/Model/DTO를 파일별로 분리하는 구조라 다른
     # 스택보다 산출물이 훨씬 길다. 엔티티가 여럿인 기획서(도서 대출 관리 등)에서
     # 8192로는 JSON이 파일을 다 못 쓰고 잘려 파싱 실패가 났다.
-    raw = call_llm(_SCHEMA_HINT, user, max_tokens=16384)
+    raw = call_llm(_build_hint(_dialect()), user, max_tokens=16384)
     try:
         result = strip_json(raw)
     except json.JSONDecodeError:
