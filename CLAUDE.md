@@ -19,11 +19,30 @@
    완료
 ```
 
-## 현재 상태 (v12)
+## 현재 상태 (v13)
 
 **목표 흐름이 한 바퀴 다 돈다** (2026-07-22 실측): 기획문서 → 문서 4종 → 사람 승인
 → 백엔드(sqlite) ∥ 프론트(react + 디자인 토큰) → 검증 3종(실행·계약·토큰) 전부 통과.
 브라우저에서 CRUD와 디자인 적용까지 눈으로 확인했다.
+
+**DB 축을 sqlite에서 Postgres로도 확장 완료 (2026-07-24). 4스택 전부 postgres에서 실검증.**
+`schema_ddl`에 `DB_TARGET` 방언 분기를 넣어(PK만 `AUTOINCREMENT`↔`SERIAL`, 타입맵 공유)
+같은 스키마를 두 방언으로 뽑고, 각 `backend_*.py`도 `_dialect()`+`_build_hint(dialect)`로
+영속성 블록만 통짜 교체하는 패턴으로 통일했다. 드라이버: fastapi=psycopg[binary],
+express·typescript=pg(node-postgres), spring=org.postgresql. 넷 다 단일 postgres DB(`doc`,
+`docker-compose.yml`의 postgres:16, 호스트 포트 55432 — 5432·5433은 WinNAT 예약범위라 bind
+막힘)를 공유하고, 한 DB에 4스택이 book/member/loan을 누적하며 서로 읽는 크로스스택 검증까지
+했다(schema_ddl 단일 스키마를 진짜 공유함을 실증). 네 스택 모두 프롬프트 수정 0회로 첫 실행
+통과 — sqlite에서 익힌 규칙(FK number, boolean 0/1, DDL 소비)이 이미 반영돼 있었고, 각 방언
+함정만 미리 못박았다(psycopg3 다중문장 불가→`;` split·`%s`·`RETURNING`, pg 비동기·rows any[],
+spring GeneratedKeyHolder는 `prepareStatement(sql, new String[]{"id"})`로 id컬럼 명시).
+`verify_backend`(유일 자동검증기, fastapi 전용)도 postgres 대응 — 더미 거부 시 `.db` 파일
+부재를 "메모리 구현"으로 오판하던 폴백을 postgres에선 생략하고 note로만 남긴다. **도커는
+파이프라인이 자동 기동하지 않는다** — 사람이 `docker compose up -d`, 백엔드는 `DATABASE_URL`로
+붙기만 한다(schemathesis·프론트 npm과 같은 판단). Postgres 전환은 국소 변경이 됐다:
+schema_ddl 방언 분기 + 각 스택 커넥션 블록만.
+
+이하 v12 (2026-07-23, sqlite 4스택 통일) 기록:
 
 **DB 영속성 축을 4스택에 통일하기 시작했다 (2026-07-23). express 완료, typescript·spring
 남음.** 목표: fastapi만 sqlite고 나머지 3스택은 in-memory라 재기동하면 데이터가 날아가던
@@ -89,17 +108,22 @@
     spring 프롬프트에는 "wrapper 파일은 만들지 마라(파이프라인이 넣는다)"를 명시.
 - **DB 영속성 축을 4스택 전부 sqlite로 통일 완료** (fastapi=stdlib sqlite3, express·typescript=
   node:sqlite 내장, spring=sqlite-jdbc). 넷 다 재기동 후 데이터 유지 검증됨. **다음: Postgres+
-  도커.** 이제 sqlite가 4스택에 서 있으니 Postgres 전환은 DDL 방언(schema_ddl에 방언 분기)+
-  커넥션 문자열만 바뀌는 국소 변경이 된다. 도커는 파이프라인이 자동 기동하지 말고(schemathesis·
-  프론트 npm처럼) 사람이 띄우고 검사만 자동화하는 게 이 repo의 반복된 결론.
+  도커** → **완료됨 (2026-07-24, 위 v13 참고).** 예측대로 국소 변경이었다: schema_ddl 방언
+  분기 + 각 스택 커넥션 블록만. 도커는 파이프라인이 자동 기동하지 말고(schemathesis·프론트
+  npm처럼) 사람이 띄우고 검사만 자동화하는 게 이 repo의 반복된 결론 — 그대로 지켰다
+  (`docker compose up -d`는 사람이, 백엔드는 `DATABASE_URL`로만).
 
-**스택별 실사용 검증 현황 (2026-07-23 기준):**
-| 스택 | 방식 | 상태 |
-|---|---|---|
-| fastapi | 자동 검증(verify_backend: 스모크+영속성) + 브라우저 | ✅ |
-| spring | `backend-runtime-verifier` 에이전트로 gradle 빌드+기동 + CRUD/업무규칙 + **sqlite-jdbc 영속성**. (초기 버그 3개는 아래, sqlite 전환 시 1개 더) | ✅ (gradlew 래퍼는 파이프라인이 자산에서 넣음) |
-| express | `backend-runtime-verifier` 에이전트로 실제 기동 + CRUD/업무규칙 스모크 + **node:sqlite 영속성**(재기동 후 데이터 유지) | ✅ (id 문자열화 버그 1개 수정) |
-| typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 스모크 + **node:sqlite 영속성** (library_plan.md) | ✅ (FK 문자열화·TS2352 버그 2개 수정) |
+**스택별 실사용 검증 현황 (2026-07-24 기준, sqlite·postgres 둘 다):**
+| 스택 | 방식 | sqlite | postgres |
+|---|---|---|---|
+| fastapi | 자동 검증(verify_backend: 스모크+영속성) + 브라우저 | ✅ (stdlib sqlite3) | ✅ (psycopg[binary]) |
+| spring | `backend-runtime-verifier` 에이전트로 gradle 빌드+기동 + CRUD/업무규칙 + 영속성 | ✅ (sqlite-jdbc) | ✅ (org.postgresql, keyholder id컬럼 함정 못박음) |
+| express | `backend-runtime-verifier` 에이전트로 실제 기동 + CRUD/업무규칙 스모크 + 영속성 | ✅ (node:sqlite) | ✅ (pg) |
+| typescript | `backend-runtime-verifier` 에이전트로 실제 기동(`tsc` 빌드 + `npm start`) + CRUD/업무규칙 + 영속성 | ✅ (node:sqlite) | ✅ (pg, rows any[]라 이중캐스팅 불필요) |
+
+postgres 4스택은 프롬프트 수정 0회로 첫 실행 통과. gradlew 래퍼는 파이프라인이 자산에서 넣음.
+초기 sqlite 시절 버그(spring 4개, express id문자열화 1개, ts FK문자열화·TS2352 2개)는 아래
+서술과 프롬프트 규칙에 이미 반영됨.
 
 **4개 스택 전부 실사용 검증 완료.** express·typescript는 `.claude/agents/backend-runtime-verifier.md` +
 `.claude/skills/backend-runtime-verification/` 하네스로 자동화해서 spring 때 사람이 손으로 했던

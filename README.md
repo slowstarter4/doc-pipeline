@@ -6,7 +6,7 @@
 ```
 기획문서.md
     │
-    ├─ 요구사항정의서 ─┬─ 화면설계서 ─┐
+    ├─ 요구사항정의서  ─┬─ 화면설계서 ─┐
     │                  └─ ERD ────────┴─→ API 명세(JSON) ─→ OpenAPI 3.0
     │                                          │
     │                                     일관성 체크
@@ -31,7 +31,8 @@
 `python main.py` 한 번에:
 
 - 요구사항정의서, 화면설계서(markdown) / ERD, API 명세(JSON) / OpenAPI 3.0 문서
-- `generated/backend/` — 실행 가능한 서버 (FastAPI + sqlite3, 표준 라이브러리만)
+- `generated/backend/` — 실행 가능한 서버 (스택 선택: fastapi/spring/express/typescript,
+  DB는 sqlite 파일 또는 postgres)
 - `generated/frontend/` — 실행 가능한 화면 (React + Vite, 또는 빌드 없는 단일 HTML)
 
 ## 셋업
@@ -91,10 +92,29 @@ cd generated/frontend && npm install && npm run dev
 ```
 BACKEND_TARGET=fastapi     # fastapi | spring | express | typescript
 FRONTEND_TARGET=react      # react | vanilla
+DB_TARGET=sqlite           # sqlite (파일 DB, 기본) | postgres
 ```
 
 새 스택은 노드 파일 하나 만들고 레지스트리에 한 줄 등록하면 된다
 (`backend_registry.py` / `frontend_registry.py`). 그래프 배선은 안 건드린다.
+
+### DB 선택 (sqlite ↔ postgres)
+
+DB 스키마는 `schema_ddl` 노드가 ERD에서 **결정적으로** 뽑는다(LLM 미사용). 4스택이
+같은 스키마를 공유하고, `DB_TARGET`으로 방언만 갈린다 — sqlite는 파일 DB
+(`AUTOINCREMENT`), postgres는 자동증가 PK를 `SERIAL`로. 타입맵(boolean→INTEGER 0/1,
+date→TEXT)은 두 방언이 공유해서 앱 코드는 안 바뀐다.
+
+postgres는 파이프라인이 자동 기동하지 않는다 — 사람이 컨테이너를 띄우고, 생성된
+백엔드는 `DATABASE_URL`로 붙기만 한다.
+
+```bash
+docker compose up -d        # postgres:16, 호스트 포트 55432
+# .env에 DB_TARGET=postgres
+```
+
+드라이버: fastapi=psycopg, express·typescript=pg(node-postgres), spring=postgresql-jdbc.
+넷 다 단일 postgres DB를 같은 스키마로 공유(재기동 영속성 검증됨).
 
 ## 디자인 토큰
 
@@ -123,11 +143,12 @@ FRONTEND_TARGET=react      # react | vanilla
 - 두 번째 기획문서(엔티티 3개, 관계, enum, 외래키, 업무 규칙 3종)로 검증했다
   (`examples/library_plan.md`). 아직 못 본 건: 파일 업로드, 여러 화면에 걸친
   다단계 흐름, 인증/권한.
-- 파이프라인 내장 자동 실행 검증(`verify_backend`)은 **FastAPI 전용**이다. 나머지
-  3개 스택은 `backend-runtime-verifier` 에이전트(`.claude/agents`,`.claude/skills`)로
-  실제 기동·CRUD·업무규칙·영속성을 검증한다 — spring/express/typescript 전부 통과.
-- DB 영속성(파일 DB)은 현재 **fastapi(stdlib sqlite3)·express(node:sqlite 내장)**에
-  적용됐다. typescript·spring은 아직 in-memory (같은 node:sqlite 방식으로 전환 진행 중).
+- 파이프라인 내장 자동 실행 검증(`verify_backend`)은 **FastAPI 전용**이다(sqlite·postgres
+  둘 다 대응). 나머지 3개 스택은 `backend-runtime-verifier` 에이전트(`.claude/agents`,
+  `.claude/skills`)로 실제 기동·CRUD·업무규칙·영속성을 검증한다 — spring/express/typescript
+  전부 통과.
+- DB 영속성은 **4스택 전부** 갖췄다 — sqlite(파일 DB) 또는 postgres, `DB_TARGET`으로 고른다.
+  넷 다 재기동 후 데이터 유지 검증됨.
 - 계약 검사는 **경로만** 본다. 경로는 같고 응답 모양만 다른 불일치는 못 잡는다.
 - 프론트 계약 위반이 잡혀도 자동으로 고치지 않는다 (진단만).
 - schemathesis 계약 검사는 파이프라인 밖에서 사람이 수동으로 돌린다.
