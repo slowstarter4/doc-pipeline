@@ -43,29 +43,56 @@ class LaunchSpec:
     """한 스택을 검증용으로 기동하는 방법. 스모크·영속성 검사 엔진은 스택 무관(순수
     HTTP)이라, 스택마다 다른 건 '어떻게 띄우나'뿐이다 - 그걸 이 스펙으로 모은다.
 
-    새 스택을 자동 검증에 넣는 법: VERIFY_LAUNCHERS에 한 줄 추가한다. graph.py는
+    새 스택을 자동 검증에 넣는 법: `_launcher()`에 분기 하나 추가한다. graph.py는
     안 건드린다(backend_registry와 같은 패턴). **주의:** 여러 언어 서버를 파이프라인이
     자동 기동하는 건 이 repo가 반복해서 겪은 대로 깨지기 쉽다(포트 예약, 빌드 시간,
-    인코딩). 그래서 지금은 fastapi만 등록돼 있다 - 다른 스택은 backend-runtime-verifier
-    에이전트로 검증한다. 여기 스택을 추가할 땐 전용 포트 충돌·빌드 타임아웃을 먼저 본다.
+    인코딩, npm=.cmd). 스택을 추가할 땐 전용 포트 충돌·빌드 타임아웃·shell 필요 여부를
+    먼저 본다. 미등록 스택은 backend-runtime-verifier 에이전트로 검증한다.
     """
 
     build: list[list[str]]  # 기동 전에 한 번 실행 (install/compile). 실패하면 검증 실패.
     start: list[str]        # 서버 기동 명령
-    port: int               # 이 서버가 리스닝하는 포트 (사람이 쓰는 포트와 겹치지 않게)
+    port: int               # 이 서버가 리스닝하는 포트
     timeout: float = STARTUP_TIMEOUT
     build_timeout: float = 120
+    # Windows에서 npm은 npm.cmd라 shell 없이 실행하면 FileNotFoundError. shell=True면
+    # **build 명령만** 문자열로 join해서 shell로 돌린다. start는 shell을 절대 안 쓴다
+    # (node.exe는 shell 불필요하고, shell로 띄우면 종료가 안 돼 포트가 남는다 - _start_server 참고).
+    shell: bool = False
 
 
-# key = BACKEND_TARGET. 없는 스택은 자동 검증을 건너뛰고 통과 처리한다(수동/에이전트 검증).
-VERIFY_LAUNCHERS: dict[str, LaunchSpec] = {
-    "fastapi": LaunchSpec(
-        build=[[sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"]],
-        # 전용 포트 8010: 사람이 수동으로 쓰는 8000과 겹치지 않게.
-        start=[sys.executable, "-m", "uvicorn", "main:app", "--port", str(VERIFY_PORT)],
-        port=VERIFY_PORT,
-    ),
-}
+def _launcher(target: str, db: str) -> "LaunchSpec | None":
+    """(스택, DB) 조합에 맞는 기동 스펙. 없으면 None(자동 검증 건너뜀).
+
+    지금 등록: fastapi(전용 포트 8010), express(실포트 5001). express는 포트를
+    코드에 하드코딩해 override가 안 되므로 실포트를 그대로 쓴다 - 사람이 5001에 뭘
+    띄워두면 충돌하나, 검증은 파이프라인 실행 중 잠깐이라 위험이 낮다(충돌 시 기동
+    실패로 드러나고 로그에 남는다).
+    """
+    if target == "fastapi":
+        # DB와 무관: uvicorn은 그대로고 sqlite3↔psycopg는 코드 안에서 갈린다.
+        return LaunchSpec(
+            build=[[sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"]],
+            # 전용 포트 8010: 사람이 수동으로 쓰는 8000과 겹치지 않게.
+            start=[sys.executable, "-m", "uvicorn", "main:app", "--port", str(VERIFY_PORT)],
+            port=VERIFY_PORT,
+        )
+    if target == "express":
+        # start가 DB로 갈린다: sqlite=node:sqlite 실험 플래그, postgres=그냥 node.
+        start = (
+            ["node", "server.js"]
+            if db == "postgres"
+            else ["node", "--experimental-sqlite", "server.js"]
+        )
+        from .backend_express import PORT as EXPRESS_PORT
+
+        return LaunchSpec(
+            build=[["npm", "install"]],
+            start=start,
+            port=EXPRESS_PORT,
+            shell=True,  # npm.cmd 때문
+        )
+    return None
 
 
 def _wait_for_server(base_url: str, probe_path: str, timeout: float) -> bool:
@@ -122,6 +149,10 @@ def _first_create(api_spec: dict) -> tuple[str, dict] | None:
 
 
 def _start_server(spec: LaunchSpec) -> subprocess.Popen:
+    # start는 항상 shell 없이 실행한다(node.exe·python·uvicorn 전부 PATH의 실행파일).
+    # shell=True로 띄우면 Windows에서 cmd.exe가 node를 자식으로 물어 terminate()가
+    # 셸만 죽이고 node는 포트를 쥔 채 남는다(재기동 시 포트 충돌). shell 필요는
+    # build(npm.cmd)에만 있고 build는 종료 관리를 안 하므로 안전하다.
     return subprocess.Popen(
         spec.start,
         cwd=BACKEND_DIR,
@@ -304,10 +335,11 @@ def verify_backend_node(state: PipelineState) -> dict:
         return {}
 
     target = os.getenv("BACKEND_TARGET", "fastapi").lower()
-    spec = VERIFY_LAUNCHERS.get(target)
+    db = os.getenv("DB_TARGET", "sqlite").lower()
+    spec = _launcher(target, db)
     if spec is None:
-        # 레지스트리에 기동 스펙이 없는 스택은 자동 검증 대상 밖 - 통과로 처리한다
-        # (backend-runtime-verifier 에이전트로 검증). VERIFY_LAUNCHERS에 한 줄 넣으면
+        # 기동 스펙이 없는 스택은 자동 검증 대상 밖 - 통과로 처리한다
+        # (backend-runtime-verifier 에이전트로 검증). _launcher에 분기를 넣으면
         # 이 스택도 자동 검증에 들어온다.
         return {
             "verify_report": {
@@ -322,11 +354,12 @@ def verify_backend_node(state: PipelineState) -> dict:
         # 기동 전 빌드/설치 단계(스택마다 다름: pip install, npm install, tsc, ...).
         for cmd in spec.build:
             build = subprocess.run(
-                cmd,
+                " ".join(cmd) if spec.shell else cmd,
                 cwd=BACKEND_DIR,
                 capture_output=True,
                 text=True,
                 timeout=spec.build_timeout,
+                shell=spec.shell,
             )
             if build.returncode != 0:
                 return {
