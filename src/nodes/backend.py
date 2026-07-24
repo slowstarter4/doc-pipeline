@@ -9,9 +9,14 @@
 """
 
 import json
+import os
 
 from ..llm import call_llm, strip_json
 from ..state import PipelineState
+
+# DATABASE_URL 규약은 docker-compose.yml과 한 쌍이다 (postgres:16, doc/doc/doc,
+# 호스트 포트 55432). 다른 backend_*.py와 같은 값.
+_DATABASE_URL = "postgresql://doc:doc@localhost:55432/doc"
 
 # uvicorn 기본 포트. RUN_INSTRUCTIONS(backend_registry.py)의 실행 명령에 --port가
 # 없으면 이 값으로 뜬다. frontend 생성 노드가 BASE 상수를 맞추는 데도 이 값을 쓴다
@@ -19,7 +24,7 @@ from ..state import PipelineState
 # 프론트 프롬프트에 숫자를 직접 박으면 스택 바꿀 때마다 어긋난다.
 PORT = 8000
 
-_SCHEMA_HINT = (
+_INTRO = (
     "너는 API 명세와 데이터 모델을 보고 실제로 동작하는 FastAPI 백엔드를 작성하는 "
     "백엔드 개발자다. 다음 규칙을 반드시 지킨다:\n"
     "- API 명세에 정의된 엔드포인트만 구현한다. 명세에 없는 엔드포인트를 추가하지 않는다.\n"
@@ -27,7 +32,11 @@ _SCHEMA_HINT = (
     "타입으로 표현되지 않는 제약(거부 조건, 자동 계산·기록되는 값, 상태 전이 제한)이며 "
     "계약의 일부다. 규칙 위반으로 요청을 거부할 때는 400과 함께 어떤 규칙에 걸렸는지 "
     "알 수 있는 메시지를 JSON으로 반환한다. rules가 빈 배열이면 추가 제약이 없다는 뜻이다.\n"
-    "- ERD에 정의된 필드만 사용한다.\n"
+)
+
+# 영속성 블록만 DB_TARGET로 갈린다(다른 backend_*.py와 같은 패턴). sqlite=stdlib
+# sqlite3 자체 CREATE TABLE, postgres=psycopg + 파이프라인 DDL(schema.sql) 실행.
+_SQLITE_DB = (
     "- 데이터는 파이썬 표준 라이브러리 sqlite3로 파일 DB에 저장한다. DB 파일명은 "
     "도메인에 맞게 정하되 확장자는 .db로 한다(예: library.db). 앱 시작 시 "
     "CREATE TABLE IF NOT EXISTS로 필요한 테이블을 전부 만든다. "
@@ -41,7 +50,37 @@ _SCHEMA_HINT = (
     "with 블록이나 try/finally로 닫는 쪽이 단순하고 안전하다.\n"
     "- id는 INTEGER PRIMARY KEY AUTOINCREMENT로 DB가 매기게 한다. 파이썬 쪽에서 "
     "카운터 변수로 세지 않는다 (재기동하면 카운터가 초기화되어 id가 겹친다).\n"
-    "- boolean 필드는 sqlite에 0/1 정수로 저장되므로, 응답으로 내보낼 때 "
+)
+_POSTGRES_DB = (
+    "- 데이터는 Postgres에 저장한다. psycopg(버전 3) 드라이버를 쓴다 - requirements.txt에 "
+    "`psycopg[binary]`를 추가한다(네이티브 빌드 없이 설치되는 바이너리 휠). SQLAlchemy 등 "
+    "ORM은 쓰지 않고 psycopg로 직접 SQL을 실행한다. 커넥션 문자열은 "
+    f"`os.environ.get('DATABASE_URL', '{_DATABASE_URL}')`로 얻는다(env가 없으면 이 "
+    "기본값 = 로컬 docker-compose의 postgres). 커넥션은 요청마다 psycopg.connect(...)로 "
+    "열고 with 블록으로 닫는다. 서버를 껐다 켜도 데이터가 남아있어야 한다.\n"
+    "- 아래 [DB 스키마(DDL)]에 주어진 CREATE TABLE 문을 앱 시작 시 그대로 실행해 테이블을 "
+    "만든다 - 직접 CREATE TABLE을 새로 짓지 않는다(스택 간 스키마가 갈리는 걸 막으려고 DDL은 "
+    "파이프라인이 결정적으로 생성한다). **주의: psycopg3의 cursor.execute는 한 번에 여러 "
+    "문장을 못 받는다** - DDL 문자열을 `;`로 split한 뒤 비어있지 않은 각 문장을 개별 "
+    "execute한다. DDL은 CREATE TABLE IF NOT EXISTS라 재기동에도 안전하다.\n"
+    "- id는 DDL의 SERIAL PRIMARY KEY로 DB가 매긴다. INSERT 문 끝에 `RETURNING id`를 붙여 "
+    "cursor.fetchone()으로 새 id를 받는다. 파이썬 카운터로 세지 않는다.\n"
+    "- SQL 플레이스홀더는 sqlite의 `?`가 아니라 psycopg의 `%s`다. 리터럴 %가 필요하면 "
+    "`%%`로 이스케이프한다.\n"
+)
+
+# id/외래키 number 규칙은 방언 무관(자동증가 정수 PK 참조).
+_FK_RULE = (
+    "- id 및 외래키(memberId, bookId 등 이름이 엔티티명+Id 형태)는 정수(int)로 다루고 "
+    "JSON에도 숫자로 내보낸다. **명세/ERD가 이 필드를 \"string\"으로 적어놨어도 예외가 "
+    "아니다** - 명세 생성 단계가 식별자 필드를 전부 \"string\"으로 뭉뚱그려 적는 경우가 "
+    "흔한데, 실제로는 자동증가 정수 PK를 참조하므로 int(숫자)가 맞다. 요청 body로 받은 "
+    "값도 int로 변환해 바인딩·응답에 일관되게 쓴다.\n"
+)
+
+_COMMON_RULES = (
+    "- ERD에 정의된 필드만 사용한다.\n"
+    "- boolean 필드는 DB에 0/1 정수로 저장되므로, 응답으로 내보낼 때 "
     "bool()로 변환해서 JSON에 true/false로 나가게 한다 (0/1이 그대로 나가면 "
     "명세의 boolean 타입과 어긋난다).\n"
     "- pydantic 모델로 request/response 스키마를 명세와 정확히 일치시킨다.\n"
@@ -87,16 +126,38 @@ _SCHEMA_HINT = (
 )
 
 
+def _dialect() -> str:
+    """DB_TARGET env로 DB 방언 선택 (schema_ddl과 같은 축). 기본 sqlite."""
+    return os.getenv("DB_TARGET", "sqlite").lower()
+
+
+def _build_hint(dialect: str) -> str:
+    db_block = _POSTGRES_DB if dialect == "postgres" else _SQLITE_DB
+    return _INTRO + db_block + _FK_RULE + _COMMON_RULES
+
+
 def backend_node(state: PipelineState) -> dict:
     api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
     data_model_json = json.dumps(state["data_model"], ensure_ascii=False, indent=2)
-    user = (
-        f"[API 명세]\n{api_spec_json}\n\n"
-        f"[데이터 모델(ERD)]\n{data_model_json}\n\n"
-        "위 API 명세와 데이터 모델로 FastAPI 백엔드를 작성해줘. "
-        "단일 main.py 파일로 충분하다. requirements.txt도 함께 만들어줘 "
-        "(fastapi, uvicorn 포함)."
-    )
+    dialect = _dialect()
+    ddl = state.get("schema_ddl") or ""
+    if dialect == "postgres":
+        user = (
+            f"[API 명세]\n{api_spec_json}\n\n"
+            f"[데이터 모델(ERD)]\n{data_model_json}\n\n"
+            f"[DB 스키마(DDL) - 이 CREATE TABLE 문을 앱 시작 시 그대로 실행한다]\n{ddl}\n\n"
+            "위 API 명세와 데이터 모델로 FastAPI 백엔드를 작성해줘. "
+            "단일 main.py 파일로 충분하다. requirements.txt도 함께 만들어줘 "
+            "(fastapi, uvicorn, psycopg[binary] 포함)."
+        )
+    else:
+        user = (
+            f"[API 명세]\n{api_spec_json}\n\n"
+            f"[데이터 모델(ERD)]\n{data_model_json}\n\n"
+            "위 API 명세와 데이터 모델로 FastAPI 백엔드를 작성해줘. "
+            "단일 main.py 파일로 충분하다. requirements.txt도 함께 만들어줘 "
+            "(fastapi, uvicorn 포함)."
+        )
 
     # 재시도 루프: 이전 시도가 실패했다면 그 원인을 프롬프트에 포함해서
     # 같은 실수를 반복하지 않게 한다 (verify_backend_node가 채워준 verify_report).
@@ -107,7 +168,7 @@ def backend_node(state: PipelineState) -> dict:
             f"{prev.get('logs', '')}"
         )
 
-    raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
+    raw = call_llm(_build_hint(dialect), user, max_tokens=8192)
     try:
         result = strip_json(raw)
     except json.JSONDecodeError:

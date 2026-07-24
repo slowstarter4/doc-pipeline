@@ -155,9 +155,19 @@ def _check_persistence(
     _stop_server(proc)
 
     if new_id is None:
-        # ponytail: 더미 데이터가 도메인 규칙에 막혔다. 진짜 왕복 검사 대신 DB 파일
-        # 존재만 본다. 파일을 만들어놓고 데이터는 메모리에 두는 구현은 못 잡는다 -
-        # 정교한 값 생성이 필요하면 그건 schemathesis의 일이다.
+        # ponytail: 더미 데이터가 도메인 규칙에 막혔다. 진짜 왕복 검사를 못 한다.
+        # postgres는 외부 DB라 .db 파일 개념이 없다 - 파일 부재를 "메모리 구현"으로
+        # 오판하면 안 되므로 note로만 남기고 통과시킨다(진짜 영속성은 docker의 postgres
+        # 볼륨이 보장하고, backend-runtime-verifier로 왕복까지 확인한다). sqlite는
+        # 기존대로 .db 파일 존재로 대체 판정한다(파일을 만들고 데이터는 메모리에 두는
+        # 구현은 못 잡지만, 정교한 값 생성은 schemathesis의 일이다).
+        if os.getenv("DB_TARGET", "sqlite").lower() == "postgres":
+            note = (
+                f"영속성 왕복 검사는 못 함 (더미 데이터가 POST {path}에서 거부됨 - "
+                "enum·자릿수·외래키 규칙). postgres 외부 DB라 파일 검사는 생략 - "
+                "왕복 확인은 backend-runtime-verifier로."
+            )
+            return [], [note], None
         db_files = list(BACKEND_DIR.glob("*.db"))
         note = (
             f"영속성 왕복 검사는 못 함 (더미 데이터가 POST {path}에서 거부됨 - "
