@@ -94,7 +94,7 @@ def frontend_react_ts_node(state: PipelineState) -> dict:
             f"{prev.get('logs', '')}"
         )
 
-    raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
+    raw = call_llm(_SCHEMA_HINT, user, max_tokens=16384)
     try:
         result = strip_json(raw)
     except json.JSONDecodeError:
