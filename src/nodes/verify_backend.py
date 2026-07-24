@@ -92,6 +92,21 @@ def _launcher(target: str, db: str) -> "LaunchSpec | None":
             port=EXPRESS_PORT,
             shell=True,  # npm.cmd 때문
         )
+    if target == "typescript":
+        # express와 같되 tsc 빌드 단계가 추가되고, 실행 대상이 dist/server.js다.
+        start = (
+            ["node", "dist/server.js"]
+            if db == "postgres"
+            else ["node", "--experimental-sqlite", "dist/server.js"]
+        )
+        from .backend_express_ts import PORT as TS_PORT
+
+        return LaunchSpec(
+            build=[["npm", "install"], ["npm", "run", "build"]],  # install → tsc
+            start=start,
+            port=TS_PORT,
+            shell=True,  # npm.cmd 때문 (build 명령만)
+        )
     return None
 
 
