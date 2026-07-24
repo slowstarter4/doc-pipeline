@@ -75,6 +75,15 @@ def frontend_node(state: PipelineState) -> dict:
         "위 API 명세를 호출하는 프론트엔드를 index.html 하나로 작성해줘."
     )
 
+    # 재시도 루프: 이전 시도가 계약 검사(verify_frontend)에 걸렸다면 그 로그를 실어
+    # 같은 실수를 반복하지 않게 한다 (backend 루프와 같은 방식).
+    prev = state.get("frontend_report")
+    if prev and prev.get("passed") is False:
+        user += (
+            f"\n\n[이전 시도 실패 로그 - 이 문제를 반드시 고쳐서 다시 작성해줘]\n"
+            f"{prev.get('logs', '')}"
+        )
+
     raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)
     try:
         result = strip_json(raw)

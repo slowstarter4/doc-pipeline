@@ -30,3 +30,4 @@ class PipelineState(TypedDict, total=False):
     frontend_report: Optional[
         dict
     ]  # {"passed": bool, "logs": str} - fetch 경로 ↔ api_spec 대조 결과
+    frontend_retry_count: Optional[int]  # frontend 재생성 시도 횟수 (무한 루프 방지)
