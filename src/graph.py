@@ -65,6 +65,8 @@ from .nodes import (
     review_gate_node,
     write_backend_node,
     verify_backend_node,
+    test_gen_node,
+    write_tests_node,
     write_frontend_node,
     verify_frontend_node,
     BACKEND_NODES,
@@ -78,11 +80,11 @@ MAX_FRONTEND_RETRIES = 3
 def _route_after_review(state: PipelineState) -> list[str]:
     """review_gate 이후 어디로 갈지 결정하는 조건부 엣지 함수.
 
-    리스트를 반환하면 LangGraph가 그만큼 fan-out 시킨다. 승인되면 backend와
-    frontend가 동시에 출발한다 - 둘 다 api_spec만 보고, 서로의 산출물을 안
-    보므로 순서가 없다.
+    리스트를 반환하면 LangGraph가 그만큼 fan-out 시킨다. 승인되면 backend·frontend·
+    test_gen이 동시에 출발한다 - 셋 다 api_spec(계약)만 보고, 서로의 산출물을 안
+    보므로 순서가 없다(test_gen도 코드가 아니라 명세에서 테스트를 만든다).
     """
-    return ["backend", "frontend"] if state.get("approved") else ["end"]
+    return ["backend", "frontend", "test"] if state.get("approved") else ["end"]
 
 
 def _route_after_verify(state: PipelineState) -> str:
@@ -158,6 +160,10 @@ def build_pipeline(checkpointer=None):
     g.add_node("verify_frontend", verify_frontend_node)
     g.add_node("bump_frontend_retry", _increment_frontend_retry)
 
+    # 테스트 갈래: 명세에서 계약 테스트를 생성만 한다(실행은 사람이 pytest로).
+    g.add_node("test_gen", test_gen_node)
+    g.add_node("write_tests", write_tests_node)
+
     g.set_entry_point("requirements")
 
     # fan-out
@@ -190,8 +196,12 @@ def build_pipeline(checkpointer=None):
     g.add_conditional_edges(
         "review_gate",
         _route_after_review,
-        {"backend": "backend", "frontend": "frontend", "end": END},
+        {"backend": "backend", "frontend": "frontend", "test": "test_gen", "end": END},
     )
+
+    # 테스트 갈래: 생성 → 쓰기 → END (재시도·실행 없음. 실행은 사람이 pytest로).
+    g.add_edge("test_gen", "write_tests")
+    g.add_edge("write_tests", END)
 
     # 프론트 갈래: 생성 → 쓰기 → 계약 대조(결정적) → 조건부 루프백 (backend와 대칭)
     g.add_edge("frontend", "write_frontend")

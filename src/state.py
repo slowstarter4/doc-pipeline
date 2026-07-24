@@ -31,3 +31,4 @@ class PipelineState(TypedDict, total=False):
         dict
     ]  # {"passed": bool, "logs": str} - fetch 경로 ↔ api_spec 대조 결과
     frontend_retry_count: Optional[int]  # frontend 재생성 시도 횟수 (무한 루프 방지)
+    test_code: Optional[dict]  # {"files": [...]} - api_spec에서 생성한 pytest 계약 테스트

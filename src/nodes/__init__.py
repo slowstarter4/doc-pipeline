@@ -17,6 +17,8 @@ from .docs.consistency_check import consistency_check_node
 from .docs.review_gate import review_gate_node
 from .backend.write_backend import write_backend_node
 from .backend.verify_backend import verify_backend_node
+from .backend.test_gen import test_gen_node
+from .backend.write_tests import write_tests_node
 from .frontend.write_frontend import write_frontend_node
 from .frontend.verify_frontend import verify_frontend_node
 from .backend.backend_registry import BACKEND_NODES, RUN_INSTRUCTIONS
@@ -33,6 +35,8 @@ __all__ = [
     "review_gate_node",
     "write_backend_node",
     "verify_backend_node",
+    "test_gen_node",
+    "write_tests_node",
     "write_frontend_node",
     "verify_frontend_node",
     "BACKEND_NODES",

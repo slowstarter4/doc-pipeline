@@ -26,6 +26,7 @@ from langgraph.types import Command
 
 from src.graph import build_pipeline
 from src.nodes import RUN_INSTRUCTIONS, FRONTEND_RUN_INSTRUCTIONS
+from src.nodes.backend.backend_registry import BACKEND_PORTS
 
 BACKEND_OUT_DIR = Path("generated/backend")
 FRONTEND_OUT_DIR = Path("generated/frontend")
@@ -139,6 +140,30 @@ def print_frontend_result(result: dict):
     print("   단, 백엔드가 먼저 떠 있어야 데이터가 보인다 (위 실행 명령 참고).")
 
 
+def print_test_result(result: dict):
+    print("=" * 60)
+    print("계약 테스트 생성 (api_spec·rules에서 생성, pytest)\n")
+    test_code = result.get("test_code") or {}
+    if test_code.get("_parse_error"):
+        print("⚠️  테스트 JSON 파싱 실패 - 아래 원본을 확인하세요.")
+        print(test_code.get("_raw", "")[:500])
+        return
+
+    files = test_code.get("files", [])
+    print(f"  생성 파일 {len(files)}개: " + ", ".join(f.get("path", "?") for f in files))
+    print("\n✅  테스트 생성 완료 (generated/tests/).")
+
+    target = os.getenv("BACKEND_TARGET", "fastapi").lower()
+    port = BACKEND_PORTS.get(target, 8000)
+    print(
+        "\n👉 실행 (백엔드를 먼저 띄운 뒤, 그 포트로 BASE_URL을 맞춰 돌린다):\n"
+        f"   cd generated/tests && pip install -r requirements.txt\n"
+        f"   BASE_URL=http://localhost:{port} pytest   "
+        f"(현재 BACKEND_TARGET={target} 포트 {port})"
+    )
+    print("   실행은 사람이 한다 - 스택마다 기동·포트가 달라 자동화하지 않는다.")
+
+
 def main():
     # 기획문서 경로는 인자로 받는다: python main.py examples/shop_plan.md
     plan_path = Path(sys.argv[1] if len(sys.argv) > 1 else "examples/todo_plan.md")
@@ -169,6 +194,7 @@ def main():
 
     print_verify_result(result)
     print_frontend_result(result)
+    print_test_result(result)
 
 
 if __name__ == "__main__":
