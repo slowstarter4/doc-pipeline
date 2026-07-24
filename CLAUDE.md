@@ -162,7 +162,7 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
 - 구현됨: `requirements` → `{screen_design, data_model}` (fan-out) → `api_spec` (fan-in)
   → `openapi_spec` → `consistency_check` → `review_gate` → (조건부) fan-out:
   - `backend` → `write_backend` → `verify_backend` → (실패 시 루프백) `backend` | END
-  - `frontend` → `write_frontend` → `verify_frontend` → END
+  - `frontend` → `write_frontend` → `verify_frontend` → (실패 시 루프백) `frontend` | END
 - **백엔드와 프론트엔드가 나란히(fan-out) 돈다.** 둘은 서로의 산출물을 안 보고
   `api_spec`만 공유한다 - 그래서 순서를 정할 이유가 없고, 한쪽만 재생성해도
   다른 쪽이 안 깨진다. 협상하는 멀티에이전트가 아니라 **계약 공유형**이다.
@@ -348,9 +348,12 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
    모서리 반경·버튼 높이까지 토큰대로 나왔다.
 
 대기 (필요가 증명되면 착수):
-- 프론트 계약 위반 시 `frontend` 노드로 루프백 (진단은 붙었고 3/3 통과 중)
-- 자동 실행 검증을 fastapi 외 스택으로 확장 (기동 명령·타임아웃을 레지스트리에
-  같이 넣는 방식이면 스택마다 if/elif를 안 쌓아도 된다)
+- ~~프론트 계약 위반 시 `frontend` 노드로 루프백~~ **완료 (2026-07-24).** 응답 모양 검사까지
+  붙어 진단이 성숙해진 뒤 backend와 대칭인 루프로 붙였다(`_route_after_frontend_verify`/
+  `bump_frontend_retry`, MAX_FRONTEND_RETRIES=3). 경로·응답 wrapper key 불일치만 태운다.
+- ~~자동 실행 검증을 fastapi 외 스택으로 확장~~ **완료 (2026-07-24, 검사 보강 A).** 예측대로
+  기동 명령·타임아웃을 `LaunchSpec` + `_launcher(target, db)` 레지스트리에 넣어 if/elif를
+  안 쌓았다. fastapi·express·typescript·spring 4스택 전부 등록(위 v13 서술 참고).
 - schemathesis 실패 리포트를 파싱해 backend로 자동 루프백 (지금은 진단 도구로만 사용)
 - 재시도 상한 도달 시 사람 에스컬레이션 (상한은 붙었고, 지금은 로그 출력 후 종료)
 - (선택) Spring 쪽에 MyBatis/JPA 연동 노드 - 인턴 업무 스택과 맞추고 싶을 때
