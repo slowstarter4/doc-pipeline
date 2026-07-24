@@ -118,12 +118,20 @@ def print_frontend_result(result: dict):
     print("=" * 60)
     print("프론트엔드 계약 검사 (fetch 경로 ↔ API 명세, LLM 미사용)\n")
     report = result.get("frontend_report") or {}
-    print(report.get("logs", "(없음)"))
+    retry_count = result.get("frontend_retry_count", 0)
+    print(f"  재시도 횟수: {retry_count}")
+    print(f"  로그:\n{report.get('logs', '(없음)')}")
 
     if report.get("passed") is True:
         print("\n✅  계약 검사 통과.")
     else:
-        print("\n⚠️  계약 위반 - 지금은 진단만 하고 자동 수정은 안 한다.")
+        # 계약 위반이면 frontend로 루프백해 재생성한다(backend와 대칭). 여기서
+        # passed=False로 왔다는 건 재시도 상한(MAX_FRONTEND_RETRIES)까지 갔는데도
+        # 못 고쳤다는 뜻이다 - 로그를 보고 사람이 확인해야 한다.
+        print(
+            f"\n🚫 재시도 {retry_count}회 후에도 계약 위반이 남았습니다. 로그를 보고 "
+            "수동으로 확인해 주세요."
+        )
 
     fe_target = os.getenv("FRONTEND_TARGET", "vanilla").lower()
     cmd = FRONTEND_RUN_INSTRUCTIONS.get(fe_target, "(알 수 없는 타깃)")
