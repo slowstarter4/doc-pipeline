@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -35,6 +36,36 @@ VERIFY_PORT = 8010
 BACKEND_DIR = Path("generated/backend")
 STARTUP_TIMEOUT = 20  # 초
 POLL_INTERVAL = 0.5
+
+
+@dataclass
+class LaunchSpec:
+    """한 스택을 검증용으로 기동하는 방법. 스모크·영속성 검사 엔진은 스택 무관(순수
+    HTTP)이라, 스택마다 다른 건 '어떻게 띄우나'뿐이다 - 그걸 이 스펙으로 모은다.
+
+    새 스택을 자동 검증에 넣는 법: VERIFY_LAUNCHERS에 한 줄 추가한다. graph.py는
+    안 건드린다(backend_registry와 같은 패턴). **주의:** 여러 언어 서버를 파이프라인이
+    자동 기동하는 건 이 repo가 반복해서 겪은 대로 깨지기 쉽다(포트 예약, 빌드 시간,
+    인코딩). 그래서 지금은 fastapi만 등록돼 있다 - 다른 스택은 backend-runtime-verifier
+    에이전트로 검증한다. 여기 스택을 추가할 땐 전용 포트 충돌·빌드 타임아웃을 먼저 본다.
+    """
+
+    build: list[list[str]]  # 기동 전에 한 번 실행 (install/compile). 실패하면 검증 실패.
+    start: list[str]        # 서버 기동 명령
+    port: int               # 이 서버가 리스닝하는 포트 (사람이 쓰는 포트와 겹치지 않게)
+    timeout: float = STARTUP_TIMEOUT
+    build_timeout: float = 120
+
+
+# key = BACKEND_TARGET. 없는 스택은 자동 검증을 건너뛰고 통과 처리한다(수동/에이전트 검증).
+VERIFY_LAUNCHERS: dict[str, LaunchSpec] = {
+    "fastapi": LaunchSpec(
+        build=[[sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"]],
+        # 전용 포트 8010: 사람이 수동으로 쓰는 8000과 겹치지 않게.
+        start=[sys.executable, "-m", "uvicorn", "main:app", "--port", str(VERIFY_PORT)],
+        port=VERIFY_PORT,
+    ),
+}
 
 
 def _wait_for_server(base_url: str, probe_path: str, timeout: float) -> bool:
@@ -90,9 +121,9 @@ def _first_create(api_spec: dict) -> tuple[str, dict] | None:
     return None
 
 
-def _start_server() -> subprocess.Popen:
+def _start_server(spec: LaunchSpec) -> subprocess.Popen:
     return subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--port", str(VERIFY_PORT)],
+        spec.start,
         cwd=BACKEND_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -128,7 +159,7 @@ def _list_ids(payload) -> list:
 
 
 def _check_persistence(
-    base_url: str, api_spec: dict, proc: subprocess.Popen
+    base_url: str, api_spec: dict, proc: subprocess.Popen, spec: LaunchSpec
 ) -> tuple[list[str], list[str], subprocess.Popen | None]:
     """항목을 하나 만들고 서버를 껐다 켠 뒤에도 남아있는지 본다.
     (problems, notes, 새 프로세스)를 돌려준다.
@@ -181,11 +212,11 @@ def _check_persistence(
         return ([] if db_files else [note]), ([note] if db_files else []), None
 
     problems: list[str] = []
-    new_proc = _start_server()
-    if not _wait_for_server(base_url, path, STARTUP_TIMEOUT):
+    new_proc = _start_server(spec)
+    if not _wait_for_server(base_url, path, spec.timeout):
         stderr = _stop_server(new_proc)
         problems.append(
-            f"영속성 검사를 위해 서버를 재기동했는데 {STARTUP_TIMEOUT}초 안에 "
+            f"영속성 검사를 위해 서버를 재기동했는데 {spec.timeout}초 안에 "
             f"안 떴음. stderr:\n{stderr[-1000:]}"
         )
         return problems, [], None
@@ -273,45 +304,42 @@ def verify_backend_node(state: PipelineState) -> dict:
         return {}
 
     target = os.getenv("BACKEND_TARGET", "fastapi").lower()
-    if target != "fastapi":
-        # 다른 스택은 자동 검증 대상 밖 - 통과로 처리하고 넘어간다.
+    spec = VERIFY_LAUNCHERS.get(target)
+    if spec is None:
+        # 레지스트리에 기동 스펙이 없는 스택은 자동 검증 대상 밖 - 통과로 처리한다
+        # (backend-runtime-verifier 에이전트로 검증). VERIFY_LAUNCHERS에 한 줄 넣으면
+        # 이 스택도 자동 검증에 들어온다.
         return {
             "verify_report": {
                 "passed": True,
-                "logs": "(자동 검증은 fastapi 전용 - 건너뜀)",
+                "logs": f"(자동 검증 미등록 스택: {target} - 에이전트 검증 대상)",
             }
         }
 
-    base_url = f"http://127.0.0.1:{VERIFY_PORT}"
+    base_url = f"http://127.0.0.1:{spec.port}"
     proc = None
     try:
-        if not (BACKEND_DIR / "requirements.txt").exists():
-            return {
-                "verify_report": {
-                    "passed": False,
-                    "logs": f"{BACKEND_DIR}/requirements.txt 파일이 없음 - 백엔드 생성이 "
-                    f"제대로 안 됐을 수 있음. 폴더 내용: {list(BACKEND_DIR.glob('*'))}",
+        # 기동 전 빌드/설치 단계(스택마다 다름: pip install, npm install, tsc, ...).
+        for cmd in spec.build:
+            build = subprocess.run(
+                cmd,
+                cwd=BACKEND_DIR,
+                capture_output=True,
+                text=True,
+                timeout=spec.build_timeout,
+            )
+            if build.returncode != 0:
+                return {
+                    "verify_report": {
+                        "passed": False,
+                        "logs": f"빌드/설치 실패 ({' '.join(cmd)}):\n{build.stderr[-2000:]}",
+                    }
                 }
-            }
-
-        install = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"],
-            cwd=BACKEND_DIR,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if install.returncode != 0:
-            return {
-                "verify_report": {
-                    "passed": False,
-                    "logs": f"의존성 설치 실패:\n{install.stderr[-2000:]}",
-                }
-            }
 
         # 이전 실행이 남긴 DB 파일들을 지운다. 안 지우면 지난번 데이터가 남아
         # "재기동 후에도 항목이 있다"가 이번 코드의 성과인지 잔여물인지 구분이 안 된다.
         # 파일명은 기획문서마다 다르므로(todos.db, library.db...) 확장자로 찾는다.
+        # (postgres 등 외부 DB엔 .db 파일이 없어 no-op - 무해하다.)
         for db_file in BACKEND_DIR.glob("*.db"):
             try:
                 db_file.unlink()
@@ -321,14 +349,14 @@ def verify_backend_node(state: PipelineState) -> dict:
         api_spec = state.get("api_spec") or {}
         probe = (_plain_get_paths(api_spec) or ["/"])[0]
 
-        proc = _start_server()
+        proc = _start_server(spec)
 
-        if not _wait_for_server(base_url, probe, STARTUP_TIMEOUT):
+        if not _wait_for_server(base_url, probe, spec.timeout):
             stderr = _stop_server(proc)
             return {
                 "verify_report": {
                     "passed": False,
-                    "logs": f"서버가 {STARTUP_TIMEOUT}초 안에 기동하지 못함. stderr:\n{stderr[-2000:]}",
+                    "logs": f"서버가 {spec.timeout}초 안에 기동하지 못함. stderr:\n{stderr[-2000:]}",
                 }
             }
 
@@ -343,7 +371,7 @@ def verify_backend_node(state: PipelineState) -> dict:
             }
 
         # 영속성 검사는 서버를 한 번 껐다 켜야 하므로 스모크가 통과한 뒤에만 한다.
-        problems, persist_notes, proc = _check_persistence(base_url, api_spec, proc)
+        problems, persist_notes, proc = _check_persistence(base_url, api_spec, proc, spec)
         if problems:
             return {
                 "verify_report": {
