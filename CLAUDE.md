@@ -421,6 +421,21 @@ design_system.md로는 프론트가 "성의없이 밋밋하게" 나왔다(CSS는
   포커스 링·전환·버튼 press가 실제로 들어감(예전 밋밋한 CSS 대비). 리치 디자인으로 출력이
   커져 프론트 3노드 max_tokens를 16384로 올렸다(8192엔 truncation).
 
+**2026-07-24 저녁 — 외부 디자인 수령 구조(흐름 ①).** "사람이 디자인 도구에서 컨셉으로
+디자인을 생성 → 파이프라인이 받아쓰기"를 갖췄다. Claude Design과 Google Stitch 둘 다
+종착지는 `design/design_system.md` 한 장(대칭). **핵심 제약: DesignSync는 파일 동기만 하고
+"생성"은 못 한다** - 컨셉→디자인 생성은 claude.ai/design 웹앱의 AI 기능이라 도구로 못
+부른다(python도, 나도). 그래서 생성은 사람이 웹에서(컨셉당 1번), pull·변환은 자동.
+완전 자동화는 "Claude Design 쓸 의미가 없다"는 사용자 판단으로 안 함.
+- `design/sources/claude-design/`: 내가 DesignSync(list_projects→get_file)로 pull.
+- `design/sources/stitch/`: Stitch는 도구 연결 없음 → 사람이 export(HTML/CSS 코드)를 드롭 →
+  내가 로컬 Read로 읽음. 차이는 "가져오는 경로"뿐(pull 자동 vs export 드롭 1단계).
+- 변환: 소스의 토큰·컴포넌트 스펙을 design_system.md 레시피로 옮김. 레이아웃은 안 가져옴
+  (화면설계서가 정함, 복사 방지). 스키마가 소스마다 달라 고정 스크립트 대신 세션에서 변환.
+- **실증(Nocturne):** 사용자가 claude.ai/design에서 만든 "Nocturne"(다크·보라 Inter·아웃라인
+  버튼·양끝 페이드 rule)을 pull→변환→프론트 재생성. react-ts 첫 생성 통과, 다크 Nocturne
+  (bg #161826, accent #9184d9) 그대로 렌더됨(vite+express 브라우저 확인). 흐름 ① 전 구간 검증.
+
 이하 2026-07-22 최초 구현 기록:
 
 지금 파이프라인에는 **외형의 근거가 되는 축이 없다**:
