@@ -56,9 +56,16 @@ class LaunchSpec:
     timeout: float = STARTUP_TIMEOUT
     build_timeout: float = 120
     # Windows에서 npm은 npm.cmd라 shell 없이 실행하면 FileNotFoundError. shell=True면
-    # **build 명령만** 문자열로 join해서 shell로 돌린다. start는 shell을 절대 안 쓴다
-    # (node.exe는 shell 불필요하고, shell로 띄우면 종료가 안 돼 포트가 남는다 - _start_server 참고).
+    # **build 명령만** 문자열로 join해서 shell로 돌린다.
     shell: bool = False
+    # start도 shell이 필요한 스택(spring: gradlew.bat 배치파일)용. 기본은 절대 안 씀 -
+    # shell로 띄우면 종료가 안 돼 포트가 남기 때문. start_shell을 켜는 스택은 반드시
+    # stop_by_port도 켜서 자식 프로세스까지 포트 기준으로 정리해야 한다.
+    start_shell: bool = False
+    # terminate()로 안 죽는 스택(spring: gradlew가 gradle 데몬·java 자식을 띄운다)은
+    # 포트를 쥔 프로세스를 트리째 taskkill한다. terminate가 셸/런처만 죽이고 실제 서버가
+    # 포트를 쥔 채 남으면 다음 실행·재기동에서 포트 충돌이 난다.
+    stop_by_port: bool = False
 
 
 def _launcher(target: str, db: str) -> "LaunchSpec | None":
@@ -106,6 +113,21 @@ def _launcher(target: str, db: str) -> "LaunchSpec | None":
             start=start,
             port=TS_PORT,
             shell=True,  # npm.cmd 때문 (build 명령만)
+        )
+    if target == "spring":
+        # gradlew bootRun이 빌드+기동을 한 번에 한다(별도 build 단계 없음). 배치파일이라
+        # start_shell 필요, gradle 데몬·java 자식이 포트를 쥐어 terminate로 안 죽으니
+        # stop_by_port로 트리 정리. 첫 빌드가 느려(의존성 다운로드 + 컴파일) timeout을
+        # 크게 잡는다. sqlite/postgres는 application.properties에서 갈리므로 start는 동일.
+        from .backend_spring import PORT as SPRING_PORT
+
+        return LaunchSpec(
+            build=[],
+            start=[".\\gradlew.bat", "bootRun", "--console=plain"],
+            port=SPRING_PORT,
+            timeout=180,
+            start_shell=True,
+            stop_by_port=True,
         )
     return None
 
@@ -168,18 +190,45 @@ def _start_server(spec: LaunchSpec) -> subprocess.Popen:
     # shell=True로 띄우면 Windows에서 cmd.exe가 node를 자식으로 물어 terminate()가
     # 셸만 죽이고 node는 포트를 쥔 채 남는다(재기동 시 포트 충돌). shell 필요는
     # build(npm.cmd)에만 있고 build는 종료 관리를 안 하므로 안전하다.
+    cmd = " ".join(spec.start) if spec.start_shell else spec.start
     return subprocess.Popen(
-        spec.start,
+        cmd,
         cwd=BACKEND_DIR,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        shell=spec.start_shell,
     )
 
 
-def _stop_server(proc: subprocess.Popen) -> str:
-    """서버를 멈추고 stderr를 회수한다. 실패 로그에 쓸 수 있게."""
-    proc.terminate()
+def _kill_port(port: int) -> None:
+    """port를 리스닝하는 프로세스를 트리째 죽인다 (Windows). gradlew처럼 자식
+    (gradle 데몬·java)이 실제 포트를 쥐어 terminate로는 안 죽는 경우에 쓴다."""
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True, timeout=10
+        ).stdout
+    except Exception:
+        return
+    pids = {
+        line.split()[-1]
+        for line in out.splitlines()
+        if f":{port} " in line and "LISTENING" in line
+    }
+    for pid in pids:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
+
+
+def _stop_server(proc: subprocess.Popen, spec: "LaunchSpec | None" = None) -> str:
+    """서버를 멈추고 stderr를 회수한다. 실패 로그에 쓸 수 있게.
+
+    spec.stop_by_port면 포트를 쥔 프로세스를 트리째 죽인다(gradlew의 java 자식 등).
+    아니면 proc.terminate()로 충분하다(python·node 직접 기동).
+    """
+    if spec is not None and spec.stop_by_port:
+        _kill_port(spec.port)
+    else:
+        proc.terminate()
     try:
         _, stderr = proc.communicate(timeout=5)
         return stderr or ""
@@ -229,7 +278,7 @@ def _check_persistence(
     except Exception:
         pass  # 아래에서 대체 검사로 넘어간다
 
-    _stop_server(proc)
+    _stop_server(proc, spec)
 
     if new_id is None:
         # ponytail: 더미 데이터가 도메인 규칙에 막혔다. 진짜 왕복 검사를 못 한다.
@@ -260,7 +309,7 @@ def _check_persistence(
     problems: list[str] = []
     new_proc = _start_server(spec)
     if not _wait_for_server(base_url, path, spec.timeout):
-        stderr = _stop_server(new_proc)
+        stderr = _stop_server(new_proc, spec)
         problems.append(
             f"영속성 검사를 위해 서버를 재기동했는데 {spec.timeout}초 안에 "
             f"안 떴음. stderr:\n{stderr[-1000:]}"
@@ -400,7 +449,7 @@ def verify_backend_node(state: PipelineState) -> dict:
         proc = _start_server(spec)
 
         if not _wait_for_server(base_url, probe, spec.timeout):
-            stderr = _stop_server(proc)
+            stderr = _stop_server(proc, spec)
             return {
                 "verify_report": {
                     "passed": False,
@@ -448,12 +497,10 @@ def verify_backend_node(state: PipelineState) -> dict:
         }
 
     finally:
+        # spec은 여기 도달 시 항상 유효(미등록 스택은 try 전에 반환됨). stop_by_port
+        # 스택은 포트를 쥔 자식까지 정리해야 하므로 _stop_server에 spec을 넘긴다.
         if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            _stop_server(proc, spec)
 
 
 if __name__ == "__main__":
