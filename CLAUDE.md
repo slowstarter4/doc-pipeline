@@ -314,8 +314,16 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
    띄워 목록/추가/완료/삭제 전부 통과, 한글 제목도 정상, 콘솔에 CORS 에러 없음.
    프리플라이트(OPTIONS)와 `access-control-allow-origin`도 확인했다.
    - 이번에 우연히 맞았지만 위험한 축이 하나 드러났다: 백엔드가 `{"todos":[...]}`
-     래퍼로 주고 프론트가 `data.todos`로 읽어서 맞았는데, **경로는 같고 응답 모양만
-     다른 불일치는 `verify_frontend`가 못 잡는다.** 계약 검사의 다음 확장 지점.
+     래퍼로 주고 프론트가 `data.todos`로 읽어서 맞았는데, 경로는 같고 응답 모양만
+     다른 불일치는 `verify_frontend`가 못 잡았다. **→ 해결 (2026-07-24):** `verify_frontend`에
+     응답 모양 검사를 붙였다(`_check_response_shape`). api_spec의 목록 응답이 배열을 감싸는
+     wrapper key(books/members/loans 등, 값이 배열인 key)를 뽑아, 프론트 소스에 그 key가
+     등장하는지 본다 - 없으면 배열을 못 푸는 것이므로 계약 위반(passed=False)으로 친다.
+     오탐이 낮은 이유: wrapper key는 도메인 명사라 프론트가 실제로 응답을 풀면 반드시
+     등장한다(부재가 강한 신호). 실측: 라이브러리 앱은 통과, `items`로 감쌌다 가정한
+     불일치는 잡힘. 경로 검사와 같은 결정적 정규식 방식. **아직 못 보는 것: 단건 응답의
+     개별 필드명 불일치(`book.name` vs `book.title`) - 필드 접근이 지역변수·구조분해로
+     퍼져 정적 추출이 흐려서 오탐이 커진다. 필요가 증명되면 그때.**
 2. ~~DB 연결 (`sqlite3`)~~ **완료 (2026-07-22).** `backend.py` 프롬프트에 sqlite3 규칙을
    넣고, `verify_backend`에 영속성 검사를 붙였다. 첫 생성에 바로 통과 (재시도 0회).
    - 생성물: `todos.db`, `INTEGER PRIMARY KEY AUTOINCREMENT`, `requirements.txt`는

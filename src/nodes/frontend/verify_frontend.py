@@ -6,6 +6,10 @@
 대조하면 끝난다. 같은 입력에 항상 같은 결과가 나와야 하므로 openapi_spec처럼
 규칙 기반 코드로만 짰다.
 
+검사 3종: ①호출 경로 ↔ api_spec 경로 ②응답 모양(목록 wrapper key를 프론트가 푸는지 -
+경로는 맞아도 {"books":[...]}를 data.items로 읽는 불일치를 잡는다) ③디자인 토큰 색.
+①②는 계약이라 passed에 반영, ③은 진단만.
+
 이 노드는 지금 진단만 한다 (실패해도 루프백하지 않는다). CLAUDE.md의 "진단과
 수정은 분리해서 단계적으로 붙인다"에 따라, 리포트가 실제로 쓸만한지 먼저 보고
 나서 루프백을 붙인다.
@@ -81,6 +85,48 @@ def _extract_calls(text: str) -> set[str]:
         _normalize(m)
         for m in _TEMPLATE_URL_RE.findall(text) + _FETCH_RE.findall(text)
     }
+
+
+def _list_wrapper_keys(api_spec: dict) -> set[str]:
+    """목록 응답을 감싸는 key들. api_spec은 목록 조회 response를
+    {"books": [{...}]}처럼 배열을 특정 key로 감싸 정의한다(api_spec 노드 프롬프트).
+    그 key(값이 배열인 것)를 모은다 - 프론트는 이 key로 응답을 풀어야 배열을 얻는다.
+    """
+    keys = set()
+    for ep in api_spec.get("endpoints", []):
+        resp = ep.get("response")
+        if isinstance(resp, dict):
+            keys |= {k for k, v in resp.items() if isinstance(v, list)}
+    return keys
+
+
+def _check_response_shape(api_spec: dict, sources_text: str) -> tuple[list[str], bool]:
+    """경로는 맞아도 응답 '모양'이 어긋나는 계약 위반을 잡는다. (logs, ok)를 준다.
+
+    백엔드가 목록을 {"books": [...]}로 감싸 주는데 프론트가 data.items처럼 다른 key로
+    읽으면, 경로 검사는 통과하지만 배열을 못 푼다(실제로 {"todos":[...]}를 data.todos로
+    읽어 '우연히' 맞았던 축이 CLAUDE.md의 확장 지점이었다). wrapper key가 프론트 소스에
+    아예 안 나오면 그 응답을 못 풀고 있다는 신호다.
+
+    key가 있는지만 본다(어떻게 쓰는지는 안 봄). 도메인 명사(books/members/loans)라
+    프론트가 실제로 풀면 반드시 등장하므로, 부재는 강한 신호이고 오탐이 낮다.
+    """
+    keys = _list_wrapper_keys(api_spec)
+    if not keys:
+        return [], True
+    missing = sorted(
+        k for k in keys if not re.search(rf"\b{re.escape(k)}\b", sources_text)
+    )
+    if missing:
+        return (
+            [
+                "응답 모양 불일치 가능 (경로는 맞지만 wrapper key를 안 씀): 목록 응답을 "
+                + ", ".join(f"'{k}'" for k in missing)
+                + " 키로 감싸는데 프론트 소스에 그 key가 없다 - 배열을 못 풀고 있을 수 있다."
+            ],
+            False,
+        )
+    return [f"목록 응답 wrapper key {len(keys)}개 전부 프론트에서 참조됨."], True
 
 
 def _check_design_tokens(sources_text: str) -> list[str]:
@@ -169,13 +215,19 @@ def verify_frontend_node(state: PipelineState) -> dict:
     if not logs:
         logs.append(f"명세의 경로 {len(spec_paths)}개를 모두 정확히 호출함.")
 
+    # 응답 모양(목록 wrapper key) 검사. 경로와 마찬가지로 계약이므로 passed에 반영한다.
+    sources_text = "\n".join(texts)
+    shape_logs, shape_ok = _check_response_shape(state["api_spec"], sources_text)
+    logs += shape_logs
+
     # 디자인 토큰은 계약이 아니므로 passed에 반영하지 않는다 (진단만).
-    logs += _check_design_tokens("\n".join(texts))
+    logs += _check_design_tokens(sources_text)
 
     return {
         "frontend_report": {
             # 안 쓰는 경로는 실패로 안 치지만, 호출이 아예 없는 건 실패다.
-            "passed": bool(called) and not unknown,
+            # 응답 wrapper key 불일치도 계약 위반이라 실패로 친다.
+            "passed": bool(called) and not unknown and shape_ok,
             "logs": "\n".join(logs),
         }
     }
@@ -226,6 +278,29 @@ if __name__ == "__main__":
       const res2 = await fetch(`${BASE}/loans${qs ? '?' + qs : ''}`)
     """
     assert _extract_calls(qs_wrapped) == {"/books", "/loans"}
+
+    # 응답 모양 검사: wrapper key 추출 + 프론트 참조 여부.
+    lib_spec = {
+        "endpoints": [
+            {"method": "GET", "path": "/books",
+             "response": {"books": [{"id": "number", "title": "string"}]}},
+            {"method": "GET", "path": "/loans",
+             "response": {"loans": [{"id": "number"}]}},
+            {"method": "POST", "path": "/books",
+             "response": {"id": "number", "title": "string"}},  # 단건: wrapper 아님
+        ]
+    }
+    assert _list_wrapper_keys(lib_spec) == {"books", "loans"}
+    # 프론트가 두 key를 다 풀면 통과.
+    ok_src = "const {books} = await res.json(); const d = data.loans;"
+    logs, ok = _check_response_shape(lib_spec, ok_src)
+    assert ok and "전부 프론트에서 참조됨" in logs[0]
+    # loans를 안 풀면(예: data.items로 잘못 읽음) 실패 + 어떤 key인지 알려준다.
+    bad_src = "const {books} = await res.json(); const d = data.items;"
+    logs, ok = _check_response_shape(lib_spec, bad_src)
+    assert not ok and "'loans'" in logs[0] and "books" not in logs[0]
+    # wrapper key가 없는 명세(단건만)는 검사할 게 없어 통과.
+    assert _check_response_shape({"endpoints": [lib_spec["endpoints"][2]]}, "") == ([], True)
 
     assert _is_ignored(Path("generated/frontend/node_modules/react/index.js"))
     assert _is_ignored(Path("generated/frontend/dist/assets/index-abc123.js"))
