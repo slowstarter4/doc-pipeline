@@ -30,7 +30,7 @@ from pathlib import Path
 
 import requests
 
-from ..state import PipelineState
+from ...state import PipelineState
 
 VERIFY_PORT = 8010
 BACKEND_DIR = Path("generated/backend")
@@ -507,7 +507,7 @@ if __name__ == "__main__":
     # 목록 응답 모양이 스택마다 다른데, 영속성 검사가 거기 걸려 넘어지면 안 된다.
     # .env를 먼저 읽어야 패키지 import가 통과한다:
     #   python -c "from dotenv import load_dotenv; load_dotenv(); import runpy; \
-    #              runpy.run_module('src.nodes.verify_backend', run_name='__main__')"
+    #              runpy.run_module('src.nodes.backend.verify_backend', run_name='__main__')"
     assert _list_ids([{"id": 1}, {"id": 2}]) == [1, 2]
     assert _list_ids({"todos": [{"id": 3}]}) == [3]
     assert _list_ids({"count": 0, "items": [{"id": 4}]}) == [4]

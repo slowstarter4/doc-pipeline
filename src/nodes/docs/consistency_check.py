@@ -13,8 +13,8 @@
 
 import json
 
-from ..llm import call_llm, strip_json
-from ..state import PipelineState
+from ...llm import call_llm, strip_json
+from ...state import PipelineState
 
 _SCHEMA_HINT = (
     "너는 개발 문서 간 일관성을 검토하는 QA 검토자다. "

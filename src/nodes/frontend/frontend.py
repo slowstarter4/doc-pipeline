@@ -1,38 +1,40 @@
 """
-프론트엔드 구현체: React + Vite
+노드9: API 명세 + 화면설계서 → 프론트엔드 코드 (단일 index.html)
 
-frontend.py(단일 index.html)와 같은 계약(api_spec)을 소비하는 다른 스택이다.
-FRONTEND_TARGET으로 골라 쓴다 (frontend_registry.py).
+백엔드와 같은 api_spec(계약)을 소비하는 반대편 구현체다. 백엔드는 계약을
+'구현'하고, 프론트는 같은 계약을 '호출'한다. 둘은 서로를 보지 않는다 -
+계약만 공유하므로 병렬(fan-out)로 돌아도 안전하다.
 
-vanilla와 다른 점은 '빌드 단계가 생긴다'는 것뿐이다. 생성물은 바로 못 열고
-npm install → npm run dev를 사람이 돌려야 한다. verify_frontend는 여전히 소스에서
-fetch 경로만 뽑아 대조한다 - npm install/build까지 파이프라인이 자동으로 돌리는 건
-CLAUDE.md의 "여러 스택 자동 기동은 깨지기 쉽다"에 그대로 걸리므로 하지 않는다.
+스택을 빌드 도구 없는 단일 HTML 파일로 정한 이유: npm install / 번들러 빌드는
+CLAUDE.md에 적힌 "여러 스택 자동 기동은 깨지기 쉽다"는 교훈에 그대로 걸린다.
+index.html 하나면 생성 결과를 브라우저로 바로 열 수 있고, 검증도 파일을 읽어
+fetch 경로를 뽑는 것으로 끝난다 (verify_frontend, LLM 미사용).
 
-출력 형식: {"files": [{"path": "상대경로", "content": "파일 내용"}]}
+입력에 화면설계서를 포함한 이유: "코드 생성 노드는 명세만 근거로 삼는다"는
+규칙의 취지는 계약(api_spec)을 우회한 구현을 막는 것인데, 프론트에서 화면설계서는
+계약이 아니라 레이아웃 정보다. 그리고 계약 준수는 verify_frontend가 결정적으로
+검사하므로 우회할 수단이 없다. 화면설계서를 안 주면 UI 구조를 LLM이 지어내게
+되고 screen_design 노드의 산출물이 아무데도 안 쓰이는 죽은 문서가 된다.
+
+출력 형식: {"files": [{"path": "index.html", "content": "..."}]}
 """
 
 import json
 import os
 
-from ..design_system import design_prompt_block
-from ..llm import call_llm, strip_json
-from ..state import PipelineState
-from .backend_registry import BACKEND_PORTS
+from ...design_system import design_prompt_block
+from ...llm import call_llm, strip_json
+from ...state import PipelineState
+from ..backend.backend_registry import BACKEND_PORTS
 
 _SCHEMA_HINT = (
-    "너는 API 명세와 화면설계서를 보고 동작하는 React 프론트엔드를 작성하는 "
-    "개발자다. 다음 규칙을 반드시 지킨다:\n"
-    "- Vite + React 최소 구성으로 만든다. 다음 파일들을 전부 포함한다: "
-    "package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/index.css\n"
-    "- 의존성은 react, react-dom(dependencies)과 vite, @vitejs/plugin-react"
-    "(devDependencies)만 쓴다. UI 라이브러리·상태관리 라이브러리·라우터·axios를 "
-    "추가하지 않는다. 데이터 요청은 브라우저 내장 fetch로 한다.\n"
-    "- package.json의 scripts에 dev/build/preview를 넣고, \"type\": \"module\"을 "
-    "명시한다 (안 넣으면 vite.config.js의 import 구문이 실행되지 않는다).\n"
-    "- 상태는 useState/useEffect만으로 관리한다.\n"
+    "너는 API 명세와 화면설계서를 보고 동작하는 프론트엔드를 작성하는 개발자다. "
+    "다음 규칙을 반드시 지킨다:\n"
+    "- 빌드 도구를 쓰지 않는다. index.html 파일 하나에 HTML/CSS/JS를 전부 인라인으로 "
+    "넣는다. npm, 번들러, 프레임워크(React/Vue 등), CDN 스크립트 모두 금지. "
+    "브라우저로 파일을 바로 열면 동작해야 한다.\n"
     "- API 명세에 있는 엔드포인트만 호출한다. 명세에 없는 경로를 부르지 않는다.\n"
-    "- 백엔드 주소는 src/App.jsx 맨 위에 상수 하나로 둔다: "
+    "- 백엔드 주소는 파일 맨 위에 상수 하나로 둔다: "
     'const BASE = "http://localhost:포트번호";  '
     "포트번호는 아래 사용자 메시지의 [백엔드 포트]에 적힌 값을 그대로 쓴다 - "
     "스택마다 다르므로(예: fastapi 8000, spring 8080) 절대 다른 값을 지어내지 않는다.\n"
@@ -48,21 +50,20 @@ _SCHEMA_HINT = (
     "메시지를 화면에 사람이 읽을 수 있게 표시한다. 조용히 무시하지 않는다.\n"
     "- 백엔드가 안 떠 있어서 fetch 자체가 실패하는 경우(네트워크 에러)도 잡아서 "
     "'백엔드에 연결할 수 없습니다' 같은 안내를 화면에 띄운다. 콘솔에만 찍고 끝내지 않는다.\n"
-    "- 목록 조회는 첫 렌더 시 useEffect로 한 번 호출하고, 생성/수정/삭제 후에도 "
+    "- 목록 조회는 페이지 로드 시 자동으로 한 번 호출하고, 생성/수정/삭제 후에도 "
     "다시 호출해서 화면을 갱신한다.\n"
-    "- CSS는 src/index.css 하나에 최소한으로 넣는다. 외부 폰트나 이미지를 "
-    "불러오지 않는다.\n"
-    "- 코드는 그대로 빌드·실행 가능해야 한다 (문법 오류·미완성 코드 금지).\n\n"
+    "- CSS는 인라인 <style>에 최소한으로 넣는다. 외부 폰트나 이미지를 불러오지 않는다.\n"
+    "- 코드는 그대로 실행 가능해야 한다 (문법 오류·미완성 코드 금지).\n\n"
     "반드시 아래 JSON 스키마 '그대로', 다른 말/마크다운 없이 JSON만 출력한다.\n"
     "{\n"
     '  "files": [\n'
-    '    {"path": "상대경로 (예: src/App.jsx)", "content": "파일 전체 내용"}\n'
+    '    {"path": "index.html", "content": "파일 전체 내용"}\n'
     "  ]\n"
     "}"
 )
 
 
-def frontend_react_node(state: PipelineState) -> dict:
+def frontend_node(state: PipelineState) -> dict:
     api_spec_json = json.dumps(state["api_spec"], ensure_ascii=False, indent=2)
     backend_target = os.getenv("BACKEND_TARGET", "fastapi").lower()
     backend_port = BACKEND_PORTS.get(backend_target, 8000)
@@ -71,7 +72,7 @@ def frontend_react_node(state: PipelineState) -> dict:
         f"[화면설계서 - 레이아웃 참고용]\n{state.get('screen_design', '(없음)')}\n\n"
         f"[백엔드 포트]\n{backend_port}\n\n"
         f"{design_prompt_block()}"
-        "위 API 명세를 호출하는 React + Vite 프론트엔드를 작성해줘."
+        "위 API 명세를 호출하는 프론트엔드를 index.html 하나로 작성해줘."
     )
 
     raw = call_llm(_SCHEMA_HINT, user, max_tokens=8192)

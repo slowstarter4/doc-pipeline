@@ -11,8 +11,8 @@
 import json
 import os
 
-from ..llm import call_llm, strip_json
-from ..state import PipelineState
+from ...llm import call_llm, strip_json
+from ...state import PipelineState
 
 # DATABASE_URL 규약은 docker-compose.yml과 한 쌍이다 (postgres:16, doc/doc/doc,
 # 호스트 포트 55432). 다른 backend_*.py와 같은 값.

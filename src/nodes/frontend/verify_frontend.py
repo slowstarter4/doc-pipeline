@@ -18,8 +18,8 @@ fetch(`${BASE}/경로`) 형태를 강제한다.
 import re
 from pathlib import Path
 
-from ..design_system import token_colors
-from ..state import PipelineState
+from ...design_system import token_colors
+from ...state import PipelineState
 
 FRONTEND_OUT_DIR = Path("generated/frontend")
 
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     # 정규화·추출 규칙이 깨지면 바로 드러나게 하는 최소 self-check.
     # src.nodes 패키지 import가 llm.py를 거치므로 .env를 먼저 읽어야 한다:
     #   python -c "from dotenv import load_dotenv; load_dotenv(); import runpy; \
-    #              runpy.run_module('src.nodes.verify_frontend', run_name='__main__')"
+    #              runpy.run_module('src.nodes.frontend.verify_frontend', run_name='__main__')"
     assert _normalize("${BASE}/todos/${id}") == "/todos/{}"
     assert _normalize("/todos/{id}") == "/todos/{}"
     assert _normalize("http://localhost:8000/todos?done=1") == "/todos"

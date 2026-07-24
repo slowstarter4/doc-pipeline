@@ -7,8 +7,8 @@
 
 import json
 
-from ..llm import call_llm, strip_json
-from ..state import PipelineState
+from ...llm import call_llm, strip_json
+from ...state import PipelineState
 
 _SCHEMA_HINT = (
     "너는 요구사항정의서를 읽고 데이터 모델(ERD)을 설계하는 설계자다. "

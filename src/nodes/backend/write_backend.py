@@ -14,7 +14,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from ..state import PipelineState
+from ...state import PipelineState
 
 BACKEND_OUT_DIR = Path("generated/backend")
 

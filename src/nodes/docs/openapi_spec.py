@@ -13,7 +13,7 @@ call_llm을 쓰지 않는다.
 
 import re
 
-from ..state import PipelineState
+from ...state import PipelineState
 
 _TYPE_MAP = {
     "string": {"type": "string"},

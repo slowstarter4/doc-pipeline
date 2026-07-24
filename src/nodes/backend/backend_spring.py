@@ -14,8 +14,8 @@ Spring은 원래 여러 클래스 파일로 나뉘는 구조라, files 리스트
 import json
 import os
 
-from ..llm import call_llm, strip_json
-from ..state import PipelineState
+from ...llm import call_llm, strip_json
+from ...state import PipelineState
 
 # DATABASE_URL 규약은 docker-compose.yml과 한 쌍이다 (postgres:16, doc/doc/doc,
 # 호스트 포트 55432). spring은 JDBC URL 형태로 쓴다.

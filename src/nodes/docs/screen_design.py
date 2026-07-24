@@ -5,8 +5,8 @@
 리뷰하는 문서 성격이 강해서, 억지로 JSON 구조화하면 표현력이 죽는다.
 """
 
-from ..llm import call_llm
-from ..state import PipelineState
+from ...llm import call_llm
+from ...state import PipelineState
 
 
 def screen_design_node(state: PipelineState) -> dict:

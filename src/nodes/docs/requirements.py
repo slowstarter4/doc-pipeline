@@ -5,8 +5,8 @@
 기획에 없는 기능을 지어내지 않는 게 핵심.
 """
 
-from ..llm import call_llm
-from ..state import PipelineState
+from ...llm import call_llm
+from ...state import PipelineState
 
 
 def requirements_node(state: PipelineState) -> dict:
