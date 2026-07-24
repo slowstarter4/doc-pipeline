@@ -143,10 +143,12 @@ docker compose up -d        # postgres:16, 호스트 포트 55432
 - 두 번째 기획문서(엔티티 3개, 관계, enum, 외래키, 업무 규칙 3종)로 검증했다
   (`examples/library_plan.md`). 아직 못 본 건: 파일 업로드, 여러 화면에 걸친
   다단계 흐름, 인증/권한.
-- 파이프라인 내장 자동 실행 검증(`verify_backend`)은 **FastAPI 전용**이다(sqlite·postgres
-  둘 다 대응). 나머지 3개 스택은 `backend-runtime-verifier` 에이전트(`.claude/agents`,
-  `.claude/skills`)로 실제 기동·CRUD·업무규칙·영속성을 검증한다 — spring/express/typescript
-  전부 통과.
+- 파이프라인 내장 자동 실행 검증(`verify_backend`)은 **4스택 전부** 대상이다(sqlite·postgres
+  둘 다). 검사 엔진(스모크·영속성)은 스택 무관(순수 HTTP)이고, 기동부만 `_launcher(target, db)`의
+  스택별 분기로 흡수한다 — fastapi=uvicorn, express/typescript=npm+node, spring=gradlew bootRun.
+  여러 언어를 자동 기동하는 취약점(포트 하드코딩·npm.cmd·gradle 프로세스 트리·빌드시간)은
+  `LaunchSpec` 필드로 처리했다. 더 정밀한 CRUD·업무규칙 왕복은 `backend-runtime-verifier`
+  에이전트(`.claude/agents`,`.claude/skills`)로도 검증한다.
 - DB 영속성은 **4스택 전부** 갖췄다 — sqlite(파일 DB) 또는 postgres, `DB_TARGET`으로 고른다.
   넷 다 재기동 후 데이터 유지 검증됨.
 - 계약 검사는 **경로만** 본다. 경로는 같고 응답 모양만 다른 불일치는 못 잡는다.

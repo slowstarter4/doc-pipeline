@@ -36,7 +36,8 @@ express·typescript=pg(node-postgres), spring=org.postgresql. 넷 다 단일 pos
 통과 — sqlite에서 익힌 규칙(FK number, boolean 0/1, DDL 소비)이 이미 반영돼 있었고, 각 방언
 함정만 미리 못박았다(psycopg3 다중문장 불가→`;` split·`%s`·`RETURNING`, pg 비동기·rows any[],
 spring GeneratedKeyHolder는 `prepareStatement(sql, new String[]{"id"})`로 id컬럼 명시).
-`verify_backend`(유일 자동검증기, fastapi 전용)도 postgres 대응 — 더미 거부 시 `.db` 파일
+`verify_backend`(파이프라인 내장 자동검증기; 이 세션의 검사 보강 A로 4스택 전부 대상이 됐다,
+아래 참고)도 postgres 대응 — 더미 거부 시 `.db` 파일
 부재를 "메모리 구현"으로 오판하던 폴백을 postgres에선 생략하고 note로만 남긴다. **도커는
 파이프라인이 자동 기동하지 않는다** — 사람이 `docker compose up -d`, 백엔드는 `DATABASE_URL`로
 붙기만 한다(schemathesis·프론트 npm과 같은 판단). Postgres 전환은 국소 변경이 됐다:
@@ -199,11 +200,19 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
   main.py는 이제 결과 출력과 사람 승인만 맡는다.
 - **생성되는 백엔드는 sqlite3 파일 DB(`todos.db`)를 쓴다** (fastapi 한정). 표준
   라이브러리라 `requirements.txt`는 여전히 `fastapi`/`uvicorn` 둘뿐이다.
-- **자동 실행 검증은 fastapi 전용이다** (`verify_backend.py`). 전용 포트 8010에서
-  uvicorn을 띄우고 POST/GET/PUT/DELETE 기본 흐름을 requests로 호출한 뒤, 서버를
-  껐다 켜서 데이터가 남아있는지까지 본다 (영속성 검사). 다른 스택은
-  기동 방식·빌드 시간·실패 모드가 제각각이라 자동 검증을 건너뛰고 통과 처리한다
-  (수동 검증은 여전히 유효).
+- **자동 실행 검증(`verify_backend.py`)은 이제 4스택 전부 대상이다** (2026-07-24, 검사 보강
+  A). 원래 fastapi 전용이었는데, 스모크·영속성 검사 엔진이 이미 스택 무관(순수 HTTP requests)
+  이라 스택마다 다른 건 '어떻게 띄우나'뿐임을 확인하고, 그 기동부를 `LaunchSpec` + `_launcher
+  (target, db)` 분기로 뺐다(backend_registry와 같은 레지스트리 패턴, graph.py 안 건드림).
+  fastapi=uvicorn(전용포트 8010), express=npm install→node(실포트 5001), typescript=npm
+  install→tsc→node dist(5002), spring=gradlew bootRun(8080). **여러 언어 자동 기동의 취약점을
+  스펙 필드로 흡수했다:** ①포트 하드코딩(express/ts/spring은 코드가 포트를 박아 override 불가
+  →실포트 그대로, 검증은 잠깐이라 충돌 위험 낮음) ②npm=.cmd(Windows)→build만 `shell=True`
+  ③start는 shell 금지(shell로 띄우면 종료가 안 돼 포트 고아)—단 spring gradlew.bat은 배치라
+  `start_shell` 필요, 대신 `stop_by_port`로 taskkill /F /T 트리킬(gradle 데몬·java 자식이
+  포트를 쥠) ④DB별 start 분기(node:sqlite는 `--experimental-sqlite` 플래그) ⑤gradle 첫빌드
+  느림→`timeout=180`. 스택별로 라이브 확인(전부 postgres, docker up). 미등록 스택이 생기면
+  `_launcher`가 None을 줘 통과 처리하고 backend-runtime-verifier 에이전트로 넘긴다.
 - **`openapi_spec`은 이 파이프라인에서 처음으로 LLM을 안 쓰는 노드다.** `api_spec`(내부
   단순 포맷)을 정식 OpenAPI 3.0 문서로 규칙 기반 변환한다 (`src/nodes/openapi_spec.py`).
   같은 입력 → 항상 같은 출력이 보장되어야 하므로 결정적으로 짰다.
