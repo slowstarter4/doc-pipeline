@@ -33,7 +33,7 @@
 - 요구사항정의서, 화면설계서(markdown) / ERD, API 명세(JSON) / OpenAPI 3.0 문서
 - `generated/backend/` — 실행 가능한 서버 (스택 선택: fastapi/spring/express/typescript,
   DB는 sqlite 파일 또는 postgres)
-- `generated/frontend/` — 실행 가능한 화면 (React + Vite, 또는 빌드 없는 단일 HTML)
+- `generated/frontend/` — 실행 가능한 화면 (vanilla HTML / React+Vite / React+Vite+TS)
 
 ## 셋업
 
@@ -91,7 +91,7 @@ cd generated/frontend && npm install && npm run dev
 
 ```
 BACKEND_TARGET=fastapi     # fastapi | spring | express | typescript
-FRONTEND_TARGET=react      # react | vanilla
+FRONTEND_TARGET=react      # vanilla | react (JSX) | react-ts (TSX)
 DB_TARGET=sqlite           # sqlite (파일 DB, 기본) | postgres
 ```
 

@@ -181,8 +181,11 @@ Todo 앱에 종속돼 있던 버그를 걷어냈다** (2026-07-22~23):
   프롬프트)은 전부 거기서 읽어만 온다 - 두 곳에 같은 숫자를 따로 적어두면 하나만
   바뀌었을 때 어긋난다.
 - **프론트 구현체도 레지스트리로 고른다** (`.env`의 `FRONTEND_TARGET`):
-  `vanilla`(빌드 없는 단일 index.html) / `react`(React + Vite). 백엔드와 똑같은
-  패턴이라 스택을 추가해도 `graph.py` 배선은 안 바뀐다.
+  `vanilla`(빌드 없는 단일 index.html) / `react`(React + Vite, JSX) / `react-ts`(React +
+  Vite + TypeScript, TSX). 백엔드가 express(JS)/typescript(TS)로 갈리듯 프론트도
+  react/react-ts로 대칭(2026-07-24 추가). 백엔드와 똑같은 패턴이라 스택을 추가해도
+  `graph.py` 배선은 안 바뀐다. react-ts는 첫 생성에 verify_frontend 통과 + tsc strict
+  0에러 컴파일 확인. verify_frontend는 언어 무관(소스에서 fetch 경로·wrapper key만 뽑음).
 - **어떤 프론트 스택이든 `npm install`/빌드는 파이프라인이 안 돌린다.** 사람이
   `cd generated/frontend && npm install && npm run dev`로 띄운다 - "여러 스택 자동
   기동은 깨지기 쉽다"는 교훈 그대로다. 검사(정적 대조)만 자동화한다.
